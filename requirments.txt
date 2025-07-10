@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+streamlit
+langchain
+langchain-community
+langchain-core
+langchain-google-genai
+langchain-experimental
+chromadb
+pypdf
+sentence-transformers
+pydantic
+python-multipart
+requests
+rank-bm25
