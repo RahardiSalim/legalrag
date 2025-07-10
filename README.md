@@ -88,7 +88,7 @@ GET /health
 ```
 
 ## Architecture
-![Architecture](assets\architecture.png)
+![Architecture](assets/architecture.png)
 
 ## Configuration
 
