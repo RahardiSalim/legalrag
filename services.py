@@ -97,7 +97,7 @@ class DocumentProcessor(DocumentProcessorInterface):
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.config.CHUNK_SIZE,
             chunk_overlap=self.config.CHUNK_OVERLAP,
-            separators=["\n\n", "\n", ".", "?", "!", " ", ""]
+            separators=["\n\n\n\n", "\n\n", "\n", ".", "?", "!", " ", ""]
         )
         
         chunks = text_splitter.split_documents(all_documents)

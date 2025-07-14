@@ -8,16 +8,16 @@ class Config:
     """Centralized configuration for the RAG system"""
     
     # API Configuration
-    GEMINI_API_KEY: str = 'YOUR_GEMINI_API_KEY_HERE'
+    GEMINI_API_KEY: str = 'your-gemini-api-key'
     
     # Model Configuration
     LLM_MODEL: str = "gemini-2.5-flash"
     EMBEDDING_MODEL: str = "models/text-embedding-004"
-    LLM_TEMPERATURE: float = 0.7
+    LLM_TEMPERATURE: float = 0.4
     
     # Document Processing
-    CHUNK_SIZE: int = 1000
-    CHUNK_OVERLAP: int = 150
+    CHUNK_SIZE: int = 1500
+    CHUNK_OVERLAP: int = 100
     
     # Retrieval Configuration
     SEARCH_K: int = 20
