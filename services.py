@@ -27,7 +27,6 @@ import re
 from config import Config
 from models import SourceDocument, DocumentMetadata
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -153,11 +152,9 @@ class DocumentProcessor(DocumentProcessorInterface):
         if not all_documents:
             raise ServiceException("No documents could be loaded successfully")
         
-        # Split documents into chunks
         chunks = self.text_splitter.split_documents(all_documents)
         logger.info(f"Created {len(chunks)} chunks from {len(all_documents)} documents")
         
-        # Remove duplicates and add metadata
         unique_chunks = self._process_chunks(chunks)
         logger.info(f"After deduplication: {len(unique_chunks)} unique chunks")
         
@@ -183,8 +180,7 @@ class DocumentProcessor(DocumentProcessorInterface):
             raise ValueError(f"Unsupported file type: {file_extension}")
         
         documents = loader.load()
-        
-        # Add file metadata
+
         for doc in documents:
             doc.metadata.update({
                 'source': str(file_path),
@@ -200,19 +196,17 @@ class DocumentProcessor(DocumentProcessorInterface):
         unique_chunks = []
         
         for i, chunk in enumerate(chunks):
-            # Clean content
+
             content = self._clean_content(chunk.page_content)
             
-            if not content or len(content.strip()) < 50:  # Skip very short chunks
+            if not content or len(content.strip()) < 50: 
                 continue
             
-            # Create hash for deduplication
             content_hash = self.create_content_hash(content)
             
             if content_hash not in self.processed_hashes:
                 self.processed_hashes.add(content_hash)
                 
-                # Update chunk content and metadata
                 chunk.page_content = content
                 chunk.metadata.update({
                     'chunk_id': f"chunk_{i}_{content_hash[:8]}",
@@ -227,10 +221,9 @@ class DocumentProcessor(DocumentProcessorInterface):
     
     def _clean_content(self, content: str) -> str:
         """Clean and normalize text content"""
-        # Remove excessive whitespace
+
         content = re.sub(r'\s+', ' ', content)
         
-        # Remove special characters that might interfere with processing
         content = re.sub(r'[^\w\s\.\,\;\:\!\?\-\(\)\[\]\{\}\"\'\/\\]', '', content)
         
         return content.strip()
@@ -246,8 +239,7 @@ class CustomReranker(BaseDocumentCompressor):
 
     model_name: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
     top_n: int = 10
-    
-    # Use a private attribute for the model instance that Pydantic will ignore
+
     _cross_encoder: Optional[CrossEncoder] = None
 
     def __init__(self, **kwargs: Any):
@@ -256,14 +248,13 @@ class CustomReranker(BaseDocumentCompressor):
         The __init__ now uses **kwargs to be compatible with Pydantic's initialization.
         """
         super().__init__(**kwargs)
-        # Pydantic automatically assigns model_name and top_n from kwargs to the instance.
+
         self._initialize_model()
 
     def _initialize_model(self):
         """Initialize the CrossEncoder model using the model_name field."""
         if self._cross_encoder is None:
             try:
-                # self.model_name is now a validated field on the instance
                 self._cross_encoder = CrossEncoder(self.model_name)
                 logger.info(f"CustomReranker initialized with model: {self.model_name}")
             except Exception as e:
@@ -345,7 +336,6 @@ class VectorStoreManager(VectorStoreInterface):
                 collection_name=self.config.COLLECTION_NAME
             )
             
-            # Check if store has documents
             collection = self.vector_store.get()
             if not collection['documents']:
                 logger.warning("Vector store exists but is empty")
@@ -353,7 +343,6 @@ class VectorStoreManager(VectorStoreInterface):
             
             logger.info(f"Loaded {len(collection['documents'])} documents from vector store")
             
-            # Recreate hybrid retriever
             self._setup_hybrid_retriever_from_store()
             
             return True
@@ -371,7 +360,6 @@ class VectorStoreManager(VectorStoreInterface):
             logger.info(f"Creating vector store with {len(documents)} documents")
             embeddings = self.model_manager.get_embeddings()
             
-            # Create vector store
             self.vector_store = Chroma.from_documents(
                 documents=documents,
                 embedding=embeddings,
@@ -379,10 +367,8 @@ class VectorStoreManager(VectorStoreInterface):
                 collection_name=self.config.COLLECTION_NAME
             )
             
-            # Cache documents for BM25
             self._documents_cache = documents
-            
-            # Setup hybrid retriever
+
             self._setup_hybrid_retriever(documents)
             
             logger.info("Vector store created successfully")
@@ -395,25 +381,21 @@ class VectorStoreManager(VectorStoreInterface):
     def _setup_hybrid_retriever(self, documents: List[Document]):
         """Setup hybrid retriever with vector and BM25 components"""
         try:
-            # Vector retriever
             vector_retriever = self.vector_store.as_retriever(
                 search_type="similarity",
                 search_kwargs={"k": self.config.SEARCH_K}
             )
-            
-            # BM25 retriever
+
             bm25_retriever = BM25Retriever.from_documents(
                 documents=documents,
                 k=self.config.SEARCH_K
             )
-            
-            # Ensemble retriever
+
             ensemble_retriever = EnsembleRetriever(
                 retrievers=[vector_retriever, bm25_retriever],
                 weights=[self.config.VECTOR_WEIGHT, self.config.BM25_WEIGHT]
             )
-            
-            # Add reranker
+
             reranker = CustomReranker(
                 model_name=self.config.RERANKER_MODEL,
                 top_n=self.config.RERANK_K
@@ -433,7 +415,6 @@ class VectorStoreManager(VectorStoreInterface):
     def _setup_hybrid_retriever_from_store(self):
         """Setup hybrid retriever from existing vector store"""
         try:
-            # Get documents from vector store
             collection = self.vector_store.get()
             documents = [
                 Document(page_content=doc, metadata=meta or {})
@@ -485,21 +466,18 @@ class RAGService(RAGServiceInterface):
     def setup_chain(self) -> None:
         """Setup the conversational retrieval chain"""
         try:
-            # Initialize memory with window to prevent context overflow
             self.memory = ConversationBufferWindowMemory(
                 memory_key="chat_history",
                 return_messages=True,
                 output_key="answer",
-                k=5  # Keep last 5 conversation turns
+                k=5 
             )
             
-            # Create custom prompt
             qa_prompt = PromptTemplate(
                 template=self.config.QA_TEMPLATE,
                 input_variables=["context", "question"]
             )
             
-            # Create chain
             self.chain = ConversationalRetrievalChain.from_llm(
                 llm=self.model_manager.get_llm(),
                 retriever=self.vector_store_manager.get_retriever(),
@@ -524,19 +502,15 @@ class RAGService(RAGServiceInterface):
         start_time = time.time()
         
         try:
-            # Enhance query if requested
             processed_question = question
             if use_enhanced_query:
                 processed_question = self._enhance_query(question, chat_history)
                 logger.info(f"Enhanced query: {processed_question}")
-            
-            # Execute chain
+
             result = self.chain({"question": processed_question})
-            
-            # Store retrieved chunks
+
             self.last_retrieved_chunks = result.get("source_documents", [])
-            
-            # Process source documents
+
             source_documents = [
                 SourceDocument(
                     content=doc.page_content,
@@ -565,8 +539,7 @@ class RAGService(RAGServiceInterface):
         """Enhance query using LLM with chat history context"""
         try:
             llm = self.model_manager.get_llm()
-            
-            # Format chat history for context
+
             history_context = self._format_chat_history(chat_history)
             
             enhancement_prompt = PromptTemplate(
@@ -585,20 +558,18 @@ class RAGService(RAGServiceInterface):
             
         except Exception as e:
             logger.error(f"Query enhancement failed: {e}")
-            return query  # Return original query if enhancement fails
+            return query
 
     def _format_chat_history(self, chat_history: List = None) -> str:
         """Format chat history for query enhancement context"""
         if not chat_history:
             return "Tidak ada riwayat percakapan sebelumnya."
-        
-        # Get last 6 messages (3 pairs of user-assistant) to avoid context overflow
+
         recent_history = chat_history[-6:] if len(chat_history) > 6 else chat_history
         
         formatted_history = []
         for msg in recent_history:
             role = "Pengguna" if msg.role == "user" else "Asisten"
-            # Truncate long messages to prevent context overflow
             content = msg.content[:300] + "..." if len(msg.content) > 300 else msg.content
             formatted_history.append(f"{role}: {content}")
         
