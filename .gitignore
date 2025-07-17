@@ -1,0 +1,12 @@
+# Ignore environment files
+.env
+
+# Ignore Python cache
+__pycache__/
+**/__pycache__/
+
+# Ignore data folder
+data/
+
+# Optional: Ignore logs and other generated files
+*.log
