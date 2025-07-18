@@ -2,9 +2,13 @@ import os
 import hashlib
 import logging
 import tempfile
+import re
 import time
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+from langchain.schema import Document
+
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -13,6 +17,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 from langchain.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain.retrievers import BM25Retriever, EnsembleRetriever
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors.base import BaseDocumentCompressor
@@ -49,6 +54,16 @@ class ModelManagerInterface(ABC):
     def get_reranker(self) -> CrossEncoder:
         pass
 
+@dataclass
+class LegalChunk:
+    """Represents a hierarchical legal document chunk"""
+    content: str
+    level: int
+    section_type: str
+    section_number: str
+    parent_sections: List[str]
+    metadata: Dict[str, Any]
+
 
 class ModelManager(ModelManagerInterface):
     """Manages AI models with lazy loading and caching"""
@@ -67,7 +82,7 @@ class ModelManager(ModelManagerInterface):
                     google_api_key=self.config.GEMINI_API_KEY,
                     safety_settings=self.config.SAFETY_SETTINGS,
                     temperature=self.config.LLM_TEMPERATURE,
-                    max_output_tokens=4096
+                    max_output_tokens=65536
                 )
                 logger.info(f"Initialized LLM: {self.config.LLM_MODEL}")
             except Exception as e:
@@ -99,6 +114,209 @@ class ModelManager(ModelManagerInterface):
         return self._reranker
 
 
+class HierarchicalLegalSplitter:
+    """Enhanced text splitter for Indonesian legal documents"""
+    
+    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        
+        # Indonesian legal document patterns
+        self.patterns = {
+            'bab': r'(?i)^BAB\s+([IVXLCDM]+|[0-9]+)[\s\.\-]*(.*)$',
+            'bagian': r'(?i)^BAGIAN\s+([IVXLCDM]+|[0-9]+)[\s\.\-]*(.*)$',
+            'pasal': r'(?i)^PASAL\s+([0-9]+)[\s\.\-]*(.*)$',
+            'ayat': r'(?i)^\(([0-9]+)\)[\s]*(.*)$',
+            'huruf': r'(?i)^([a-z])\.\s*(.*)$',
+            'angka': r'(?i)^([0-9]+)\.\s*(.*)$',
+            'paragraf': r'(?i)^PARAGRAF\s+([0-9]+)[\s\.\-]*(.*)$',
+            'sub_bagian': r'(?i)^SUB\s+BAGIAN\s+([0-9]+)[\s\.\-]*(.*)$'
+        }
+        
+        # Hierarchy levels (lower number = higher level)
+        self.hierarchy_levels = {
+            'bab': 1,
+            'bagian': 2,
+            'sub_bagian': 3,
+            'paragraf': 4,
+            'pasal': 5,
+            'ayat': 6,
+            'huruf': 7,
+            'angka': 8
+        }
+    
+    def split_documents(self, documents: List[Document]) -> List[Document]:
+        """Split documents using hierarchical legal structure"""
+        all_chunks = []
+        
+        for doc in documents:
+            legal_chunks = self._parse_legal_structure(doc)
+            document_chunks = self._create_hierarchical_chunks(legal_chunks, doc)
+            all_chunks.extend(document_chunks)
+        
+        return all_chunks
+    
+    def _parse_legal_structure(self, document: Document) -> List[LegalChunk]:
+        """Parse document into hierarchical legal chunks"""
+        lines = document.page_content.split('\n')
+        legal_chunks = []
+        current_hierarchy = {}
+        
+        for line_num, line in enumerate(lines):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Check if line matches any legal pattern
+            matched_pattern = None
+            for pattern_name, pattern in self.patterns.items():
+                match = re.match(pattern, line)
+                if match:
+                    matched_pattern = pattern_name
+                    section_number = match.group(1)
+                    section_title = match.group(2) if len(match.groups()) > 1 else ""
+                    break
+            
+            if matched_pattern:
+                # Update current hierarchy
+                level = self.hierarchy_levels[matched_pattern]
+                
+                # Clear lower levels
+                current_hierarchy = {k: v for k, v in current_hierarchy.items() 
+                                   if self.hierarchy_levels[k] < level}
+                
+                # Add current section
+                current_hierarchy[matched_pattern] = {
+                    'number': section_number,
+                    'title': section_title,
+                    'line_start': line_num
+                }
+                
+                # Create parent section path
+                parent_sections = []
+                for hierarchy_type in sorted(current_hierarchy.keys(), 
+                                           key=lambda x: self.hierarchy_levels[x]):
+                    if hierarchy_type != matched_pattern:
+                        parent_sections.append(f"{hierarchy_type.upper()} {current_hierarchy[hierarchy_type]['number']}")
+                
+                # Collect content until next section of same or higher level
+                content_lines = [line]
+                for next_line_num in range(line_num + 1, len(lines)):
+                    next_line = lines[next_line_num].strip()
+                    if not next_line:
+                        content_lines.append("")
+                        continue
+                    
+                    # Check if this is a section of same or higher level
+                    is_higher_section = False
+                    for check_pattern, check_regex in self.patterns.items():
+                        if re.match(check_regex, next_line):
+                            check_level = self.hierarchy_levels[check_pattern]
+                            if check_level <= level:
+                                is_higher_section = True
+                                break
+                    
+                    if is_higher_section:
+                        break
+                    
+                    content_lines.append(next_line)
+                
+                # Create legal chunk
+                legal_chunk = LegalChunk(
+                    content='\n'.join(content_lines),
+                    level=level,
+                    section_type=matched_pattern,
+                    section_number=section_number,
+                    parent_sections=parent_sections,
+                    metadata=document.metadata.copy()
+                )
+                
+                legal_chunks.append(legal_chunk)
+        
+        return legal_chunks
+    
+    def _create_hierarchical_chunks(self, legal_chunks: List[LegalChunk], 
+                                  original_doc: Document) -> List[Document]:
+        """Create final document chunks with proper hierarchy"""
+        chunks = []
+        
+        for legal_chunk in legal_chunks:
+            # If chunk is too large, split it while preserving context
+            if len(legal_chunk.content) > self.chunk_size:
+                sub_chunks = self._split_large_chunk(legal_chunk)
+                chunks.extend(sub_chunks)
+            else:
+                chunks.append(self._create_document_chunk(legal_chunk, original_doc))
+        
+        return chunks
+    
+    def _split_large_chunk(self, legal_chunk: LegalChunk) -> List[Document]:
+        """Split large chunks while preserving legal context"""
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        
+        # Use recursive splitter for large chunks
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap,
+            separators=["\n\n\n", "\n\n", "\n", ".", "?", "!", " ", ""]
+        )
+        
+        sub_chunks = splitter.split_text(legal_chunk.content)
+        documents = []
+        
+        for i, sub_chunk in enumerate(sub_chunks):
+            # Create context header for sub-chunks
+            context_header = self._create_context_header(legal_chunk)
+            full_content = f"{context_header}\n\n{sub_chunk}"
+            
+            metadata = legal_chunk.metadata.copy()
+            metadata.update({
+                'section_type': legal_chunk.section_type,
+                'section_number': legal_chunk.section_number,
+                'hierarchy_level': legal_chunk.level,
+                'parent_sections': " > ".join(legal_chunk.parent_sections) if legal_chunk.parent_sections else "",
+                'sub_chunk_index': i,
+                'total_sub_chunks': len(sub_chunks),
+                'is_sub_chunk': True
+            })
+            
+            doc = Document(page_content=full_content, metadata=metadata)
+            documents.append(doc)
+        
+        return documents
+    
+    def _create_document_chunk(self, legal_chunk: LegalChunk, 
+                             original_doc: Document) -> Document:
+        """Create a document chunk from legal chunk"""
+        context_header = self._create_context_header(legal_chunk)
+        full_content = f"{context_header}\n\n{legal_chunk.content}"
+        
+        metadata = legal_chunk.metadata.copy()
+        metadata.update({
+            'section_type': legal_chunk.section_type,
+            'section_number': legal_chunk.section_number,
+            'hierarchy_level': legal_chunk.level,
+            'parent_sections': " > ".join(legal_chunk.parent_sections) if legal_chunk.parent_sections else "",
+            'is_sub_chunk': False
+        })
+        
+        return Document(page_content=full_content, metadata=metadata)
+    
+    def _create_context_header(self, legal_chunk: LegalChunk) -> str:
+        """Create context header for better understanding"""
+        context_parts = []
+        
+        # Add parent sections for context
+        if legal_chunk.parent_sections:
+            context_parts.extend(legal_chunk.parent_sections)
+        
+        # Add current section
+        current_section = f"{legal_chunk.section_type.upper()} {legal_chunk.section_number}"
+        context_parts.append(current_section)
+        
+        return " > ".join(context_parts)
+
+
 class DocumentProcessorInterface(ABC):
     @abstractmethod
     def process_documents(self, file_paths: List[str]) -> List[Document]:
@@ -116,6 +334,26 @@ class DocumentProcessor(DocumentProcessorInterface):
         self.config = config
         self.processed_hashes = set()
         self._text_splitter = None
+
+    def _create_hierarchical_text_splitter(self) -> HierarchicalLegalSplitter:
+        """Create hierarchical text splitter for legal documents"""
+        return HierarchicalLegalSplitter(
+            chunk_size=self.config.CHUNK_SIZE,
+            chunk_overlap=self.config.CHUNK_OVERLAP
+        )
+
+    def _detect_document_type(self, content: str) -> str:
+        """Detect if document is legal/regulatory"""
+        legal_indicators = [
+            'pasal', 'bab', 'bagian', 'ayat', 'peraturan', 'undang-undang',
+            'keputusan', 'surat edaran', 'ojk', 'otoritas jasa keuangan',
+            'peraturan otoritas jasa keuangan', 'pojk'
+        ]
+        
+        content_lower = content.lower()
+        legal_score = sum(1 for indicator in legal_indicators if indicator in content_lower)
+        
+        return 'legal' if legal_score >= 3 else 'general'
         
     @property
     def text_splitter(self) -> RecursiveCharacterTextSplitter:
@@ -124,12 +362,12 @@ class DocumentProcessor(DocumentProcessorInterface):
                 chunk_size=self.config.CHUNK_SIZE,
                 chunk_overlap=self.config.CHUNK_OVERLAP,
                 length_function=len,
-                separators=["\n\n\n", "\n\n", "\n", ".", "?", "!", " ", ""]
+                separators=[]
             )
         return self._text_splitter
     
     def process_documents(self, file_paths: List[str]) -> List[Document]:
-        """Process multiple document files with comprehensive error handling"""
+        """Enhanced document processing with hierarchical chunking"""
         all_documents = []
         processing_errors = []
         
@@ -152,8 +390,31 @@ class DocumentProcessor(DocumentProcessorInterface):
         if not all_documents:
             raise ServiceException("No documents could be loaded successfully")
         
-        chunks = self.text_splitter.split_documents(all_documents)
-        logger.info(f"Created {len(chunks)} chunks from {len(all_documents)} documents")
+        # Detect document types and choose appropriate splitter
+        legal_docs = []
+        general_docs = []
+        
+        for doc in all_documents:
+            doc_type = self._detect_document_type(doc.page_content)
+            if doc_type == 'legal':
+                legal_docs.append(doc)
+            else:
+                general_docs.append(doc)
+        
+        chunks = []
+        
+        # Use hierarchical splitter for legal documents
+        if legal_docs:
+            hierarchical_splitter = self._create_hierarchical_text_splitter()
+            legal_chunks = hierarchical_splitter.split_documents(legal_docs)
+            chunks.extend(legal_chunks)
+            logger.info(f"Created {len(legal_chunks)} hierarchical chunks from {len(legal_docs)} legal documents")
+        
+        # Use regular splitter for general documents
+        if general_docs:
+            regular_chunks = self.text_splitter.split_documents(general_docs)
+            chunks.extend(regular_chunks)
+            logger.info(f"Created {len(regular_chunks)} regular chunks from {len(general_docs)} general documents")
         
         unique_chunks = self._process_chunks(chunks)
         logger.info(f"After deduplication: {len(unique_chunks)} unique chunks")
@@ -192,15 +453,17 @@ class DocumentProcessor(DocumentProcessorInterface):
         return documents
     
     def _process_chunks(self, chunks: List[Document]) -> List[Document]:
-        """Process chunks with deduplication and metadata enhancement"""
+        """Enhanced chunk processing with legal document detection"""
         unique_chunks = []
         
         for i, chunk in enumerate(chunks):
-
             content = self._clean_content(chunk.page_content)
             
-            if not content or len(content.strip()) < 50: 
+            if not content or len(content.strip()) < 50:
                 continue
+            
+            # Detect document type
+            doc_type = self._detect_document_type(content)
             
             content_hash = self.create_content_hash(content)
             
@@ -212,12 +475,14 @@ class DocumentProcessor(DocumentProcessorInterface):
                     'chunk_id': f"chunk_{i}_{content_hash[:8]}",
                     'content_hash': content_hash,
                     'chunk_length': len(content),
-                    'chunk_index': i
+                    'chunk_index': i,
+                    'document_type': doc_type
                 })
                 
                 unique_chunks.append(chunk)
         
         return unique_chunks
+
     
     def _clean_content(self, content: str) -> str:
         """Clean and normalize text content"""
@@ -358,18 +623,37 @@ class VectorStoreManager(VectorStoreInterface):
         
         try:
             logger.info(f"Creating vector store with {len(documents)} documents")
+            
+            # Filter complex metadata before creating vector store
+            filtered_documents = filter_complex_metadata(documents)
+            logger.info(f"Filtered complex metadata from {len(documents)} documents")
+            
+            # Additional cleanup to ensure no complex types remain
+            for doc in filtered_documents:
+                cleaned_metadata = {}
+                for key, value in doc.metadata.items():
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        cleaned_metadata[key] = value
+                    elif isinstance(value, list):
+                        # Convert lists to strings
+                        cleaned_metadata[key] = " > ".join(str(item) for item in value) if value else ""
+                    else:
+                        # Convert other types to string
+                        cleaned_metadata[key] = str(value)
+                doc.metadata = cleaned_metadata
+            
             embeddings = self.model_manager.get_embeddings()
             
             self.vector_store = Chroma.from_documents(
-                documents=documents,
+                documents=filtered_documents,
                 embedding=embeddings,
                 persist_directory=self.config.PERSIST_DIRECTORY,
                 collection_name=self.config.COLLECTION_NAME
             )
             
-            self._documents_cache = documents
+            self._documents_cache = filtered_documents
 
-            self._setup_hybrid_retriever(documents)
+            self._setup_hybrid_retriever(filtered_documents)
             
             logger.info("Vector store created successfully")
             return self.vector_store
