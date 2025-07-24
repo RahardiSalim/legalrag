@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 import logging
+from hybrid_rag_service import HybridRAGService
 
 from config import Config
 from models import (
@@ -48,12 +49,14 @@ model_manager = ModelManager(config)
 document_processor = DocumentProcessor(config)
 vector_store_manager = VectorStoreManager(config, model_manager)
 rag_service = RAGService(config, model_manager, vector_store_manager)
+hybrid_rag_service = HybridRAGService(config, model_manager, rag_service)
 
 # Application state
 class ApplicationState:
     def __init__(self):
         self.chat_history: List[ChatMessage] = []
         self.system_initialized: bool = False
+        self.graph_enabled: bool = False
         self.last_upload_time: Optional[datetime] = None
         self.document_count: int = 0
         self.chunk_count: int = 0
@@ -93,13 +96,25 @@ async def startup_event():
         if vector_store_manager.load_store():
             rag_service.setup_chain()
             app_state.system_initialized = True
-            logger.info("✅ System initialized from existing database")
+            logger.info("✅ Traditional RAG initialized from existing database")
+            
+            # Check if graph database exists and has data
+            try:
+                graph_stats = hybrid_rag_service.get_graph_stats()
+                if graph_stats.get("total_nodes", 0) > 0:
+                    hybrid_rag_service.graph_enabled = True
+                    app_state.graph_enabled = True
+                    logger.info("✅ Knowledge graph loaded successfully")
+                else:
+                    logger.info("📊 Knowledge graph is empty")
+            except Exception as e:
+                logger.warning(f"Graph loading failed: {e}")
         else:
             logger.info("⚠️ System not initialized. Please upload documents to create a new database")
             
     except Exception as e:
         logger.error(f"Failed to initialize system: {e}")
-        # Continue startup even if initialization fails
+
 
 # Shutdown event
 @app.on_event("shutdown")
@@ -202,15 +217,24 @@ async def upload_files(files: List[UploadFile] = File(...)):
         
         # Setup RAG chain
         rag_service.setup_chain()
+
+        # Build knowledge graph
+        logger.info("Building knowledge graph...")
+        graph_success = hybrid_rag_service.build_graph_from_documents(documents)
         
         # Update application state
         app_state.system_initialized = True
+        app_state.graph_enabled = graph_success
         app_state.last_upload_time = datetime.now()
         app_state.document_count = len(file_paths)
         app_state.chunk_count = len(documents)
         
-        logger.info(f"Successfully processed {len(file_paths)} files into {len(documents)} chunks")
-        
+        message = f"Successfully processed {len(file_paths)} files"
+        if graph_success:
+            message += " with knowledge graph"
+
+        logger.info(message)
+
         return UploadResponse(
             success=True,
             message=f"Successfully processed {len(file_paths)} files",
@@ -237,7 +261,7 @@ async def upload_files(files: List[UploadFile] = File(...)):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: QueryRequest):
-    """Chat with the RAG system"""
+    """Chat with the hybrid RAG system"""
     if not app_state.system_initialized:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -253,10 +277,11 @@ async def chat(request: QueryRequest):
         )
         app_state.chat_history.append(user_message)
         
-        # Query RAG system
-        result = rag_service.query(
+        # Query hybrid RAG system
+        result = hybrid_rag_service.query(
             question=request.question,
             use_enhanced_query=request.use_enhanced_query,
+            use_graph=request.use_graph and app_state.graph_enabled,
             chat_history=app_state.chat_history
         )
         
@@ -338,15 +363,16 @@ async def health_check():
         # Check vector store status
         vector_store_status = "healthy" if vector_store_manager.vector_store else "not_initialized"
         
-        # Check API status
-        api_status = "healthy"
+        # Check graph status
+        graph_status = "enabled" if app_state.graph_enabled else "disabled"
         
         return HealthResponse(
             status="healthy",
             system_initialized=app_state.system_initialized,
             chat_history_length=len(app_state.chat_history),
             vector_store_status=vector_store_status,
-            api_status=api_status
+            api_status="healthy",
+            graph_status=graph_status  # Add this field to HealthResponse model
         )
         
     except Exception as e:
@@ -356,20 +382,75 @@ async def health_check():
             system_initialized=False,
             chat_history_length=0,
             vector_store_status="error",
-            api_status="error"
+            api_status="error",
+            graph_status="error"
         )
 
 @app.get("/stats")
 async def get_system_stats():
     """Get system statistics"""
-    return {
+    stats = {
         "system_initialized": app_state.system_initialized,
+        "graph_enabled": app_state.graph_enabled,
         "chat_history_length": len(app_state.chat_history),
         "last_upload_time": app_state.last_upload_time,
         "document_count": app_state.document_count,
-        "chunk_count": app_state.chunk_count,
-        "uptime": datetime.now() - datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        "chunk_count": app_state.chunk_count
     }
+    
+    if app_state.graph_enabled:
+        graph_stats = hybrid_rag_service.get_graph_stats()
+        stats["graph_stats"] = graph_stats
+    
+    return stats
+
+@app.get("/graph/stats")
+async def get_graph_stats():
+    """Get knowledge graph statistics"""
+    if not app_state.system_initialized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="System not initialized"
+        )
+    
+    return hybrid_rag_service.get_graph_stats()
+
+@app.post("/graph/rebuild")
+async def rebuild_graph():
+    """Rebuild knowledge graph from existing documents"""
+    if not app_state.system_initialized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="System not initialized. Upload documents first."
+        )
+    
+    try:
+        # Get documents from vector store
+        chunks = rag_service.get_last_chunks()
+        if not chunks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No documents available to build graph"
+            )
+        
+        # Rebuild graph
+        success = hybrid_rag_service.build_graph_from_documents(chunks)
+        
+        if success:
+            app_state.graph_enabled = True
+            return {"message": "Knowledge graph rebuilt successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to rebuild knowledge graph"
+            )
+            
+    except Exception as e:
+        logger.error(f"Failed to rebuild graph: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error rebuilding graph: {str(e)}"
+        )
 
 # Run the app
 if __name__ == "__main__":

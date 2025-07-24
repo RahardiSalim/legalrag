@@ -154,13 +154,15 @@ class APIClient:
         return APIClient._make_request("POST", "/upload", files=files_data)
     
     @staticmethod
-    def send_chat_message(question: str, use_enhanced_query: bool = False) -> Optional[Dict]:
+    def send_chat_message(question: str, use_enhanced_query: bool = False, use_graph: bool = True) -> Optional[Dict]:
         """Send chat message to the API"""
         payload = {
             "question": question,
-            "use_enhanced_query": use_enhanced_query
+            "use_enhanced_query": use_enhanced_query,
+            "use_graph": use_graph
         }
         return APIClient._make_request("POST", "/chat", json=payload)
+
     
     @staticmethod
     def get_chat_history() -> Optional[Dict]:
@@ -230,15 +232,17 @@ def render_sidebar():
         
         st.markdown("---")
         
-        # Settings
-        use_enhanced_query, max_results = render_settings()
+        # Settings - Fix: unpack all 3 values
+        use_enhanced_query, use_graph, max_results = render_settings()
         
         st.markdown("---")
         
         # Actions
         render_actions()
         
-        return use_enhanced_query, max_results
+        # Fix: return all 3 values
+        return use_enhanced_query, use_graph, max_results
+
 
 def render_system_status():
     """Render system status information"""
@@ -282,6 +286,13 @@ def render_settings():
         value=True,
         help="Menggunakan AI untuk memperbaiki pertanyaan Anda berdasarkan konteks percakapan, membuat pencarian dokumen lebih spesifik dan relevan."
     )
+
+    # Graph RAG toggle
+    use_graph = st.checkbox(
+        "🕸️ Gunakan Knowledge Graph",
+        value=True,
+        help="Menggunakan knowledge graph untuk mendapatkan jawaban yang lebih kontekstual"
+    )
     
     # Auto-refresh toggle
     auto_refresh = st.checkbox(
@@ -308,7 +319,7 @@ def render_settings():
         help="Jumlah maksimal dokumen sumber yang ditampilkan"
     )
     
-    return use_enhanced_query, max_results
+    return use_enhanced_query, use_graph, max_results
 
 def render_actions():
     """Render action buttons"""
@@ -327,7 +338,7 @@ def render_actions():
     if st.button("🔄 Refresh Status", use_container_width=True):
         st.rerun()
 
-def render_chat_interface(use_enhanced_query: bool):
+def render_chat_interface(use_enhanced_query: bool, use_graph: bool):
     """Render the main chat interface"""
     st.header("💬 Chat Assistant")
     
@@ -351,16 +362,16 @@ def render_chat_interface(use_enhanced_query: bool):
         if not st.session_state.system_initialized:
             st.error("⚠️ Upload dokumen terlebih dahulu!")
         else:
-            process_chat_message(user_input, use_enhanced_query)
+            process_chat_message(user_input, use_enhanced_query, use_graph)
     
     # Display chat history
     display_chat_history()
 
-def process_chat_message(user_input: str, use_enhanced_query: bool):
+def process_chat_message(user_input: str, use_enhanced_query: bool, use_graph: bool):
     """Process a chat message"""
     with st.spinner("🔍 Mencari jawaban..."):
         start_time = time.time()
-        response = APIClient.send_chat_message(user_input, use_enhanced_query)
+        response = APIClient.send_chat_message(user_input, use_enhanced_query, use_graph)
         
         if response and "answer" in response:
             processing_time = time.time() - start_time
@@ -379,14 +390,19 @@ def process_chat_message(user_input: str, use_enhanced_query: bool):
                 "timestamp": datetime.now(),
                 "processing_time": processing_time,
                 "enhanced_query": use_enhanced_query,
+                "graph_used": use_graph,
                 "generated_question": response.get("generated_question"),
-                "enhanced_query_used": response.get("enhanced_query")
+                "enhanced_query_used": response.get("enhanced_query"),
+                "graph_nodes_found": response.get("graph_nodes_found", 0)
             })
             
             # Store last chunks
             st.session_state.last_chunks = response.get("source_documents", [])
             
-            st.success(f"✅ Jawaban ditemukan dalam {processing_time:.2f}s")
+            success_msg = f"✅ Jawaban ditemukan dalam {processing_time:.2f}s"
+            if response.get("graph_used"):
+                success_msg += f" (Graph: {response.get('graph_nodes_found', 0)} nodes)"
+            st.success(success_msg)
             st.rerun()
         else:
             st.error("❌ Gagal mendapatkan jawaban")
@@ -559,13 +575,13 @@ def main():
     st.markdown("---")
     
     # Render sidebar and get settings
-    use_enhanced_query, max_results = render_sidebar()
+    use_enhanced_query, use_graph, max_results = render_sidebar()
     
     # Main layout
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        render_chat_interface(use_enhanced_query)
+        render_chat_interface(use_enhanced_query, use_graph)
     
     with col2:
         render_information_panel(max_results)

@@ -54,6 +54,7 @@ class ChatResponse(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     use_enhanced_query: bool = False
+    use_graph: bool = True
     max_results: Optional[int] = Field(default=5, ge=1, le=20)
     include_metadata: bool = True
     
@@ -106,6 +107,7 @@ class HealthResponse(BaseModel):
     chat_history_length: int
     vector_store_status: str
     api_status: str
+    graph_status: Optional[str] = "disabled"  # Add this
     timestamp: datetime = Field(default_factory=datetime.now)
 
 

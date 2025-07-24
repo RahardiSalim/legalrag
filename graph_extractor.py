@@ -166,6 +166,7 @@ JSON Response:""",
             prompt = self.node_extraction_prompt.format(documents=docs_text)
             
             response = llm.invoke(prompt)
+            # print(response)
             self.api_calls_count += 1
             
             # Parse response
@@ -196,6 +197,7 @@ JSON Response:""",
             )
             
             response = llm.invoke(prompt)
+            # print(response)
             self.api_calls_count += 1
             
             # Parse response
@@ -222,7 +224,9 @@ JSON Response:""",
         """Prepare nodes information for edge extraction"""
         nodes_info = []
         for node in nodes:
-            info = f"- {node.name} ({node.type.value})"
+            # Fix: Use the enum value properly
+            node_type_str = node.type.value if hasattr(node.type, 'value') else str(node.type)
+            info = f"- {node.name} ({node_type_str})"
             if node.description:
                 info += f": {node.description}"
             nodes_info.append(info)
@@ -236,17 +240,33 @@ JSON Response:""",
         try:
             # Clean response
             response = self._clean_json_response(response)
+            print(response)
             data = json.loads(response)
             
             nodes = []
             chunk_id_map = {chunk.metadata.get('chunk_id', f'chunk_{i}'): chunk.metadata.get('chunk_id', f'chunk_{i}') 
-                           for i, chunk in enumerate(chunks)}
+                        for i, chunk in enumerate(chunks)}
             
             for node_data in data.get('nodes', []):
                 try:
+                    # Fix: Handle node_type conversion properly
+                    node_type_str = node_data.get('type', 'concept')
+                    
+                    # Ensure node_type is a valid NodeType
+                    try:
+                        if isinstance(node_type_str, str):
+                            # Convert string to NodeType enum
+                            node_type = NodeType(node_type_str.lower())
+                        else:
+                            node_type = NodeType.CONCEPT  # default
+                    except ValueError:
+                        # If node_type is not valid, use default
+                        logger.warning(f"Invalid node type '{node_type_str}', using 'concept'")
+                        node_type = NodeType.CONCEPT
+                    
                     node = GraphNode(
                         name=node_data.get('name', ''),
-                        type=NodeType(node_data.get('type', 'concept')),
+                        type=node_type,
                         description=node_data.get('description'),
                         attributes=node_data.get('attributes', {}),
                         chunk_ids=set(node_data.get('chunk_ids', []))
@@ -268,6 +288,7 @@ JSON Response:""",
         try:
             # Clean response
             response = self._clean_json_response(response)
+            print(response)
             data = json.loads(response)
             
             edges = []
@@ -280,15 +301,32 @@ JSON Response:""",
                     target_name = edge_data.get('target_node_name', '')
                     
                     if source_name in node_name_to_id and target_name in node_name_to_id:
+                        # Fix: Handle edge_type conversion properly
+                        edge_type_str = edge_data.get('edge_type', 'relates_to')
+                        
+                        # Ensure edge_type is a valid EdgeType
+                        try:
+                            if isinstance(edge_type_str, str):
+                                # Convert string to EdgeType enum
+                                edge_type = EdgeType(edge_type_str.lower())
+                            else:
+                                edge_type = EdgeType.RELATES_TO  # default
+                        except ValueError:
+                            # If edge_type is not valid, use default
+                            logger.warning(f"Invalid edge type '{edge_type_str}', using 'relates_to'")
+                            edge_type = EdgeType.RELATES_TO
+                        
                         edge = GraphEdge(
                             source_node_id=node_name_to_id[source_name],
                             target_node_id=node_name_to_id[target_name],
-                            edge_type=EdgeType(edge_data.get('edge_type', 'relates_to')),
+                            edge_type=edge_type,
                             weight=float(edge_data.get('weight', 1.0)),
                             description=edge_data.get('description'),
                             chunk_ids=set(edge_data.get('chunk_ids', []))
                         )
                         edges.append(edge)
+                    else:
+                        logger.warning(f"Node names not found: source='{source_name}', target='{target_name}'")
                 except Exception as e:
                     logger.warning(f"Failed to parse edge: {edge_data}, error: {e}")
             

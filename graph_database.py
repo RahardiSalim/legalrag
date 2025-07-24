@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 import logging
 from contextlib import contextmanager
+import datetime
 
 from graph_models import GraphNode, GraphEdge, NodeType, EdgeType
 
@@ -124,59 +125,77 @@ class SQLiteGraphDatabase(GraphDatabaseInterface):
         try:
             with self._get_connection() as conn:
                 for node in nodes:
-                    # Insert or update node
+                    # Fix: Handle enum conversion properly
+                    node_type_str = node.type.value if hasattr(node.type, 'value') else str(node.type)
+                    
                     conn.execute("""
                         INSERT OR REPLACE INTO nodes 
                         (id, name, type, description, attributes, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        node.id, node.name, node.type.value, node.description,
-                        json.dumps(node.attributes), node.created_at, node.updated_at
+                        node.id,
+                        node.name,
+                        node_type_str,  # Use the string value
+                        node.description,
+                        json.dumps(node.attributes) if node.attributes else None,
+                        node.created_at.isoformat() if hasattr(node.created_at, 'isoformat') else str(node.created_at),
+                        node.updated_at.isoformat() if hasattr(node.updated_at, 'isoformat') else str(node.updated_at)
                     ))
                     
-                    # Delete existing chunk mappings
+                    # Save chunk associations
+                    # First, delete existing associations for this node
                     conn.execute("DELETE FROM node_chunks WHERE node_id = ?", (node.id,))
                     
-                    # Insert chunk mappings
+                    # Insert new associations
                     for chunk_id in node.chunk_ids:
                         conn.execute("""
-                            INSERT INTO node_chunks (node_id, chunk_id) VALUES (?, ?)
+                            INSERT INTO node_chunks (node_id, chunk_id)
+                            VALUES (?, ?)
                         """, (node.id, chunk_id))
-            
-            logger.info(f"Saved {len(nodes)} nodes to database")
-            return True
-            
+                
+                conn.commit()
+                return True
+                
         except Exception as e:
             logger.error(f"Failed to save nodes: {e}")
             return False
-    
+        
     def save_edges(self, edges: List[GraphEdge]) -> bool:
         """Save edges to database"""
         try:
             with self._get_connection() as conn:
                 for edge in edges:
-                    # Insert or update edge
+                    # Fix: Handle enum conversion properly
+                    edge_type_str = edge.edge_type.value if hasattr(edge.edge_type, 'value') else str(edge.edge_type)
+                    
                     conn.execute("""
                         INSERT OR REPLACE INTO edges 
                         (id, source_node_id, target_node_id, edge_type, weight, description, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        edge.id, edge.source_node_id, edge.target_node_id,
-                        edge.edge_type.value, edge.weight, edge.description, edge.created_at
+                        edge.id,
+                        edge.source_node_id,
+                        edge.target_node_id,
+                        edge_type_str,  # Use the string value
+                        edge.weight,
+                        edge.description,
+                        edge.created_at.isoformat() if hasattr(edge.created_at, 'isoformat') else str(edge.created_at)
                     ))
                     
-                    # Delete existing chunk mappings
+                    # Save chunk associations
+                    # First, delete existing associations for this edge
                     conn.execute("DELETE FROM edge_chunks WHERE edge_id = ?", (edge.id,))
                     
-                    # Insert chunk mappings
+                    # Insert new associations
                     for chunk_id in edge.chunk_ids:
                         conn.execute("""
-                            INSERT INTO edge_chunks (edge_id, chunk_id) VALUES (?, ?)
+                            INSERT INTO edge_chunks (edge_id, chunk_id)
+                            VALUES (?, ?)
                         """, (edge.id, chunk_id))
-            
-            logger.info(f"Saved {len(edges)} edges to database")
-            return True
-            
+                
+                conn.commit()
+                return True
+                
         except Exception as e:
             logger.error(f"Failed to save edges: {e}")
             return False
@@ -185,33 +204,39 @@ class SQLiteGraphDatabase(GraphDatabaseInterface):
         """Get node by ID"""
         try:
             with self._get_connection() as conn:
-                # Get node
                 row = conn.execute("""
                     SELECT id, name, type, description, attributes, created_at, updated_at
                     FROM nodes WHERE id = ?
                 """, (node_id,)).fetchone()
                 
-                if not row:
-                    return None
-                
-                # Get chunk IDs
-                chunk_rows = conn.execute("""
-                    SELECT chunk_id FROM node_chunks WHERE node_id = ?
-                """, (node_id,)).fetchall()
-                
-                chunk_ids = {row[0] for row in chunk_rows}
-                
-                return GraphNode(
-                    id=row['id'],
-                    name=row['name'],
-                    type=NodeType(row['type']),
-                    description=row['description'],
-                    attributes=json.loads(row['attributes']) if row['attributes'] else {},
-                    chunk_ids=chunk_ids,
-                    created_at=row['created_at'],
-                    updated_at=row['updated_at']
-                )
-                
+                if row:
+                    # Get chunk IDs for this node
+                    chunk_rows = conn.execute("""
+                        SELECT chunk_id FROM node_chunks WHERE node_id = ?
+                    """, (node_id,)).fetchall()
+                    
+                    chunk_ids = {chunk_row[0] for chunk_row in chunk_rows}
+                    
+                    # Fix: Handle enum conversion from database
+                    try:
+                        node_type = NodeType(row['type'])
+                    except ValueError:
+                        logger.warning(f"Invalid node type '{row['type']}' for node {node_id}, using 'concept'")
+                        node_type = NodeType.CONCEPT
+                    
+                    return GraphNode(
+                        id=row['id'],
+                        name=row['name'],
+                        type=node_type,
+                        description=row['description'],
+                        attributes=json.loads(row['attributes']) if row['attributes'] else {},
+                        chunk_ids=chunk_ids,
+                        created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.now(),
+                        updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else datetime.now()
+                    )
+            
+            return None
+            
         except Exception as e:
             logger.error(f"Failed to get node {node_id}: {e}")
             return None
@@ -295,19 +320,17 @@ class SQLiteGraphDatabase(GraphDatabaseInterface):
             return []
     
     def get_edges_between_nodes(self, node_ids: List[str]) -> List[GraphEdge]:
-        """Get edges between given nodes"""
+        """Get edges between specific nodes"""
         try:
             if not node_ids:
                 return []
             
-            placeholders = ','.join('?' * len(node_ids))
-            
+            placeholders = ','.join(['?' for _ in node_ids])
             with self._get_connection() as conn:
                 rows = conn.execute(f"""
                     SELECT id, source_node_id, target_node_id, edge_type, weight, description, created_at
                     FROM edges 
-                    WHERE source_node_id IN ({placeholders}) 
-                    AND target_node_id IN ({placeholders})
+                    WHERE source_node_id IN ({placeholders}) AND target_node_id IN ({placeholders})
                 """, node_ids + node_ids).fetchall()
                 
                 edges = []
@@ -319,15 +342,22 @@ class SQLiteGraphDatabase(GraphDatabaseInterface):
                     
                     chunk_ids = {chunk_row[0] for chunk_row in chunk_rows}
                     
+                    # Fix: Handle enum conversion from database
+                    try:
+                        edge_type = EdgeType(row['edge_type'])
+                    except ValueError:
+                        logger.warning(f"Invalid edge type '{row['edge_type']}' for edge {row['id']}, using 'relates_to'")
+                        edge_type = EdgeType.RELATES_TO
+                    
                     edge = GraphEdge(
                         id=row['id'],
                         source_node_id=row['source_node_id'],
                         target_node_id=row['target_node_id'],
-                        edge_type=EdgeType(row['edge_type']),
+                        edge_type=edge_type,
                         weight=row['weight'],
                         description=row['description'],
                         chunk_ids=chunk_ids,
-                        created_at=row['created_at']
+                        created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.now()
                     )
                     edges.append(edge)
                 

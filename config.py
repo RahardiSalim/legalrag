@@ -15,7 +15,7 @@ class Config:
     GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv('GEMINI_API_KEY', ''))
     
     # Model Configuration
-    LLM_MODEL: str = "gemini-2.0-flash-exp"
+    LLM_MODEL: str = "gemini-2.0-flash-lite"
     EMBEDDING_MODEL: str = "models/text-embedding-004"
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
     LLM_TEMPERATURE: float = 0.4
