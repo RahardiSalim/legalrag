@@ -30,7 +30,8 @@ from pydantic import BaseModel, Field
 import re
 
 from config import Config
-from models import SourceDocument, DocumentMetadata
+from models import SourceDocument, DocumentMetadata, SearchType, GraphEntity, GraphRelationship
+from graph_service import GraphService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -123,16 +124,16 @@ class HierarchicalLegalSplitter:
         
         # Indonesian legal document patterns
         self.patterns = {
-            'bab': r'(?i)^BAB\s+([IVXLCDM]+|[0-9]+)[\s\.\-]*(.*)$',
-            'bagian': r'(?i)^BAGIAN\s+([IVXLCDM]+|[0-9]+)[\s\.\-]*(.*)$',
-            'pasal': r'(?i)^PASAL\s+([0-9]+)[\s\.\-]*(.*)$',
-            'ayat': r'(?i)^\(([0-9]+)\)[\s]*(.*)$',
-            'huruf': r'(?i)^([a-z])\.\s*(.*)$',
-            'angka': r'(?i)^([0-9]+)\.\s*(.*)$',
-            'paragraf': r'(?i)^PARAGRAF\s+([0-9]+)[\s\.\-]*(.*)$',
-            'sub_bagian': r'(?i)^SUB\s+BAGIAN\s+([0-9]+)[\s\.\-]*(.*)$'
+            'bab': r'(?i)^BAB\s+([IVXLCDM]+|[0-9]+)[\s\.\-]*(.*)',
+            'bagian': r'(?i)^BAGIAN\s+([IVXLCDM]+|[0-9]+)[\s\.\-]*(.*)',
+            'pasal': r'(?i)^PASAL\s+([0-9]+)[\s\.\-]*(.*)',
+            'ayat': r'(?i)^\(([0-9]+)\)[\s]*(.*)',
+            'huruf': r'(?i)^([a-z])\.\s*(.*)',
+            'angka': r'(?i)^([0-9]+)\.\s*(.*)',
+            'paragraf': r'(?i)^PARAGRAF\s+([0-9]+)[\s\.\-]*(.*)',
+            'sub_bagian': r'(?i)^SUB\s+BAGIAN\s+([0-9]+)[\s\.\-]*(.*)'
         }
-        
+                
         # Hierarchy levels (lower number = higher level)
         self.hierarchy_levels = {
             'bab': 1,
@@ -582,7 +583,115 @@ class VectorStoreManager(VectorStoreInterface):
         self.vector_store = None
         self.hybrid_retriever = None
         self._documents_cache = []
+        self.graph_service = None
         
+    def add_documents(self, documents: List[Document]) -> bool:
+        """Add new documents to existing vector store and update graph"""
+        if not self.vector_store:
+            raise ServiceException("Vector store not initialized")
+        
+        try:
+            logger.info(f"Adding {len(documents)} new documents to vector store")
+            
+            # Filter and clean documents
+            filtered_documents = filter_complex_metadata(documents)
+            logger.info(f"Filtered complex metadata from {len(documents)} documents")
+            
+            # Additional cleanup to ensure no complex types remain
+            for doc in filtered_documents:
+                cleaned_metadata = {}
+                for key, value in doc.metadata.items():
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        cleaned_metadata[key] = value
+                    elif isinstance(value, list):
+                        cleaned_metadata[key] = " > ".join(str(item) for item in value) if value else ""
+                    else:
+                        cleaned_metadata[key] = str(value)
+                doc.metadata = cleaned_metadata
+            
+            # Add to vector store
+            self.vector_store.add_documents(filtered_documents)
+            self._documents_cache.extend(filtered_documents)
+            
+            # Update hybrid retriever with new documents
+            self._setup_hybrid_retriever(self._documents_cache)
+            
+            # AUTOMATICALLY UPDATE GRAPH DATABASE
+            if self.graph_service:
+                try:
+                    logger.info("Automatically updating graph database with new documents")
+                    # Use incremental update instead of full rebuild
+                    graph_updated = self.graph_service.update_graph_with_documents(filtered_documents)
+                    if graph_updated:
+                        logger.info("Graph database updated incrementally")
+                    else:
+                        logger.warning("Graph database incremental update failed")
+                except Exception as e:
+                    logger.error(f"Failed to update graph database incrementally: {e}")
+            
+            logger.info(f"Successfully added {len(filtered_documents)} documents")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add documents: {e}")
+            return False
+
+    def create_store(self, documents: List[Document]) -> Any:
+        """Create new vector store with documents and update graph"""
+        if not documents:
+            raise ValueError("No documents provided for vector store creation")
+        
+        try:
+            logger.info(f"Creating vector store with {len(documents)} documents")
+            
+            # Filter complex metadata before creating vector store
+            filtered_documents = filter_complex_metadata(documents)
+            logger.info(f"Filtered complex metadata from {len(documents)} documents")
+            
+            # Additional cleanup to ensure no complex types remain
+            for doc in filtered_documents:
+                cleaned_metadata = {}
+                for key, value in doc.metadata.items():
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        cleaned_metadata[key] = value
+                    elif isinstance(value, list):
+                        cleaned_metadata[key] = " > ".join(str(item) for item in value) if value else ""
+                    else:
+                        cleaned_metadata[key] = str(value)
+                doc.metadata = cleaned_metadata
+            
+            embeddings = self.model_manager.get_embeddings()
+            
+            self.vector_store = Chroma.from_documents(
+                documents=filtered_documents,
+                embedding=embeddings,
+                persist_directory=self.config.PERSIST_DIRECTORY,
+                collection_name=self.config.COLLECTION_NAME
+            )
+            
+            self._documents_cache = filtered_documents
+            self._setup_hybrid_retriever(filtered_documents)
+            
+            # AUTOMATICALLY UPDATE GRAPH DATABASE
+            if self.graph_service:
+                try:
+                    logger.info("Automatically updating graph database with new documents")
+                    graph_updated = self.graph_service.process_documents_to_graph(filtered_documents)
+                    if graph_updated:
+                        logger.info("Graph database updated successfully")
+                    else:
+                        logger.warning("Graph database update failed")
+                except Exception as e:
+                    logger.error(f"Failed to update graph database: {e}")
+                    # Don't fail the entire process if graph update fails
+            
+            logger.info("Vector store created successfully")
+            return self.vector_store
+            
+        except Exception as e:
+            logger.error(f"Failed to create vector store: {e}")
+            raise ServiceException(f"Failed to create vector store: {e}")
+    
     def load_store(self) -> bool:
         """Load existing vector store from persistence"""
         persist_dir = Path(self.config.PERSIST_DIRECTORY)
@@ -615,52 +724,6 @@ class VectorStoreManager(VectorStoreInterface):
         except Exception as e:
             logger.error(f"Failed to load vector store: {e}")
             return False
-    
-    def create_store(self, documents: List[Document]) -> Any:
-        """Create new vector store with documents"""
-        if not documents:
-            raise ValueError("No documents provided for vector store creation")
-        
-        try:
-            logger.info(f"Creating vector store with {len(documents)} documents")
-            
-            # Filter complex metadata before creating vector store
-            filtered_documents = filter_complex_metadata(documents)
-            logger.info(f"Filtered complex metadata from {len(documents)} documents")
-            
-            # Additional cleanup to ensure no complex types remain
-            for doc in filtered_documents:
-                cleaned_metadata = {}
-                for key, value in doc.metadata.items():
-                    if isinstance(value, (str, int, float, bool)) or value is None:
-                        cleaned_metadata[key] = value
-                    elif isinstance(value, list):
-                        # Convert lists to strings
-                        cleaned_metadata[key] = " > ".join(str(item) for item in value) if value else ""
-                    else:
-                        # Convert other types to string
-                        cleaned_metadata[key] = str(value)
-                doc.metadata = cleaned_metadata
-            
-            embeddings = self.model_manager.get_embeddings()
-            
-            self.vector_store = Chroma.from_documents(
-                documents=filtered_documents,
-                embedding=embeddings,
-                persist_directory=self.config.PERSIST_DIRECTORY,
-                collection_name=self.config.COLLECTION_NAME
-            )
-            
-            self._documents_cache = filtered_documents
-
-            self._setup_hybrid_retriever(filtered_documents)
-            
-            logger.info("Vector store created successfully")
-            return self.vector_store
-            
-        except Exception as e:
-            logger.error(f"Failed to create vector store: {e}")
-            raise ServiceException(f"Failed to create vector store: {e}")
     
     def _setup_hybrid_retriever(self, documents: List[Document]):
         """Setup hybrid retriever with vector and BM25 components"""
@@ -724,7 +787,7 @@ class RAGServiceInterface(ABC):
         pass
     
     @abstractmethod
-    def query(self, question: str, use_enhanced_query: bool = False) -> Dict[str, Any]:
+    def query(self, question: str, search_type: SearchType = SearchType.VECTOR, use_enhanced_query: bool = False) -> Dict[str, Any]:
         pass
     
     @abstractmethod
@@ -737,16 +800,44 @@ class RAGServiceInterface(ABC):
 
 
 class RAGService(RAGServiceInterface):
-    """Main RAG service with enhanced query processing"""
+    """Main RAG service with enhanced query processing and graph integration"""
     
     def __init__(self, config: Config, model_manager: ModelManager, vector_store_manager: VectorStoreManager):
         self.config = config
         self.model_manager = model_manager
         self.vector_store_manager = vector_store_manager
+        self.graph_service = GraphService(config) if config.ENABLE_GRAPH_PROCESSING else None
+        
+        # Pass graph service to vector store manager for automatic updates
+        self.vector_store_manager.graph_service = self.graph_service
+        
         self.last_retrieved_chunks = []
         self.chain = None
         self.memory = None
-        
+
+    def add_documents(self, documents: List[Document]) -> bool:
+        """Add new documents to existing vector store and update graph"""
+        try:
+            # Add to vector store (this will automatically update graph)
+            success = self.vector_store_manager.add_documents(documents)
+            
+            if success:
+                logger.info(f"Successfully added {len(documents)} new documents")
+                return True
+            else:
+                logger.error("Failed to add new documents")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to add new documents: {e}")
+            return False
+
+    def update_graph_with_documents(self, documents: List[Document]) -> bool:
+        """Update graph with new documents incrementally"""
+        if not self.graph_service:
+            return False
+        return self.graph_service.update_graph_with_documents(documents)
+    
     def setup_chain(self) -> None:
         """Setup the conversational retrieval chain"""
         try:
@@ -772,52 +863,205 @@ class RAGService(RAGServiceInterface):
                 verbose=True
             )
             
+            # Try to load existing graph data
+            if self.graph_service:
+                self.graph_service.load_graph_data()
+            
             logger.info("RAG chain setup complete")
             
         except Exception as e:
             logger.error(f"Failed to setup RAG chain: {e}")
             raise ServiceException(f"Failed to setup RAG chain: {e}")
     
-    def query(self, question: str, use_enhanced_query: bool = False, chat_history: List = None) -> Dict[str, Any]:
-        """Process query with optional enhancement and chat history"""
+    def process_documents_for_graph(self, documents: List[Document]) -> bool:
+        """Process documents for graph generation"""
+        if not self.graph_service:
+            logger.info("Graph service not available")
+            return False
+        
+        return self.graph_service.process_documents_to_graph(documents)
+    
+    def update_graph_with_documents(self, documents: List[Document]) -> bool:
+        """Update graph with new documents incrementally"""
+        if not self.graph_service:
+            return False
+        return self.graph_service.update_graph_with_documents(documents)
+        
+    def query(self, question: str, search_type: SearchType = SearchType.VECTOR, use_enhanced_query: bool = False, chat_history: List = None) -> Dict[str, Any]:
+        """Process query with different search types"""
         if not self.chain:
             raise ServiceException("RAG chain not initialized")
         
         start_time = time.time()
         
         try:
-            processed_question = question
-            if use_enhanced_query:
-                processed_question = self._enhance_query(question, chat_history)
-                logger.info(f"Enhanced query: {processed_question}")
-
-            result = self.chain({"question": processed_question})
-
-            self.last_retrieved_chunks = result.get("source_documents", [])
-
-            source_documents = [
-                SourceDocument(
-                    content=doc.page_content,
-                    metadata=doc.metadata,
-                    score=doc.metadata.get("score"),
-                    rerank_score=doc.metadata.get("rerank_score")
-                )
-                for doc in self.last_retrieved_chunks
-            ]
-            
-            processing_time = time.time() - start_time
-            
-            return {
-                "answer": result["answer"],
-                "source_documents": source_documents,
-                "generated_question": result.get("generated_question"),
-                "enhanced_query": use_enhanced_query,
-                "processing_time": processing_time
-            }
-            
+            if search_type == SearchType.GRAPH:
+                return self._query_graph(question, use_enhanced_query, chat_history, start_time)
+            elif search_type == SearchType.HYBRID:
+                return self._query_hybrid(question, use_enhanced_query, chat_history, start_time)
+            else:
+                return self._query_vector(question, use_enhanced_query, chat_history, start_time)
+                
         except Exception as e:
             logger.error(f"Query processing failed: {e}")
             raise ServiceException(f"Query processing failed: {e}")
+    
+    def _query_vector(self, question: str, use_enhanced_query: bool, chat_history: List, start_time: float) -> Dict[str, Any]:
+        """Process query using vector search"""
+        processed_question = question
+        if use_enhanced_query:
+            processed_question = self._enhance_query(question, chat_history)
+            logger.info(f"Enhanced query: {processed_question}")
+
+        result = self.chain({"question": processed_question})
+        self.last_retrieved_chunks = result.get("source_documents", [])
+
+        source_documents = [
+            SourceDocument(
+                content=doc.page_content,
+                metadata=doc.metadata,
+                score=doc.metadata.get("score"),
+                rerank_score=doc.metadata.get("rerank_score")
+            )
+            for doc in self.last_retrieved_chunks
+        ]
+        
+        processing_time = time.time() - start_time
+        
+        return {
+            "answer": result["answer"],
+            "source_documents": source_documents,
+            "generated_question": result.get("generated_question"),
+            "enhanced_query": use_enhanced_query,
+            "search_type_used": SearchType.VECTOR,
+            "processing_time": processing_time,
+            "graph_entities": [],
+            "graph_relationships": []
+        }
+    
+    def _query_graph(self, question: str, use_enhanced_query: bool, chat_history: List, start_time: float) -> Dict[str, Any]:
+        """Process query using graph search"""
+        if not self.graph_service or not self.graph_service.has_graph_data():
+            # Fallback to vector search if graph not available
+            logger.warning("Graph search requested but no graph data available, falling back to vector search")
+            return self._query_vector(question, use_enhanced_query, chat_history, start_time)
+        
+        processed_question = question
+        if use_enhanced_query:
+            processed_question = self._enhance_query(question, chat_history)
+        
+        # Search graph for relevant information
+        graph_result = self.graph_service.search_graph(processed_question)
+        
+        # Create graph-specific prompt
+        graph_prompt = PromptTemplate(
+            template=self.config.GRAPH_QA_TEMPLATE,
+            input_variables=["graph_context", "question"]
+        )
+        
+        # Generate answer using graph context
+        llm = self.model_manager.get_llm()
+        formatted_prompt = graph_prompt.format(
+            graph_context=graph_result["context"],
+            question=processed_question
+        )
+        
+        response = llm.invoke(formatted_prompt)
+        answer = response.content
+        
+        # Convert graph entities and relationships to response format
+        graph_entities = [
+            GraphEntity(
+                id=entity["id"],
+                type=entity["type"],
+                properties=entity.get("properties", {})
+            )
+            for entity in graph_result.get("relevant_entities", [])
+        ]
+        
+        graph_relationships = [
+            GraphRelationship(
+                source=rel["source"],
+                target=rel["target"],
+                type=rel["type"],
+                properties=rel.get("properties", {})
+            )
+            for rel in graph_result.get("relevant_relationships", [])
+        ]
+        
+        processing_time = time.time() - start_time
+        
+        return {
+            "answer": answer,
+            "source_documents": [],  # Graph search doesn't use chunked documents
+            "generated_question": processed_question if use_enhanced_query else None,
+            "enhanced_query": use_enhanced_query,
+            "search_type_used": SearchType.GRAPH,
+            "processing_time": processing_time,
+            "graph_entities": graph_entities,
+            "graph_relationships": graph_relationships
+        }
+    
+    def _query_hybrid(self, question: str, use_enhanced_query: bool, chat_history: List, start_time: float) -> Dict[str, Any]:
+        """Process query using both vector and graph search"""
+        # Get vector search results
+        vector_result = self._query_vector(question, use_enhanced_query, chat_history, start_time)
+        
+        # Get graph search results if available
+        graph_entities = []
+        graph_relationships = []
+        
+        if self.graph_service and self.graph_service.has_graph_data():
+            processed_question = question
+            if use_enhanced_query:
+                processed_question = self._enhance_query(question, chat_history)
+            
+            graph_result = self.graph_service.search_graph(processed_question)
+            
+            graph_entities = [
+                GraphEntity(
+                    id=entity["id"],
+                    type=entity["type"],
+                    properties=entity.get("properties", {})
+                )
+                for entity in graph_result.get("relevant_entities", [])
+            ]
+            
+            graph_relationships = [
+                GraphRelationship(
+                    source=rel["source"],
+                    target=rel["target"],
+                    type=rel["type"],
+                    properties=rel.get("properties", {})
+                )
+                for rel in graph_result.get("relevant_relationships", [])
+            ]
+            
+            # Enhance answer with graph context if available
+            if graph_result["context"] and graph_result["context"] != "Tidak ditemukan informasi graph yang relevan":
+                enhanced_prompt = f"""
+                Konteks dari pencarian vektor: {vector_result['answer']}
+                
+                Informasi tambahan dari graph: {graph_result['context']}
+                
+                Pertanyaan: {question}
+                
+                Berikan jawaban yang menggabungkan informasi dari kedua sumber di atas:
+                """
+                
+                llm = self.model_manager.get_llm()
+                enhanced_response = llm.invoke(enhanced_prompt)
+                vector_result["answer"] = enhanced_response.content
+        
+        # Update result with hybrid information
+        vector_result.update({
+            "search_type_used": SearchType.HYBRID,
+            "graph_entities": graph_entities,
+            "graph_relationships": graph_relationships,
+            "processing_time": time.time() - start_time
+        })
+        
+        return vector_result
 
     def _enhance_query(self, query: str, chat_history: List = None) -> str:
         """Enhance query using LLM with chat history context"""
@@ -868,3 +1112,71 @@ class RAGService(RAGServiceInterface):
         if self.memory:
             self.memory.clear()
             logger.info("Memory cleared")
+    
+    def get_graph_stats(self) -> Dict[str, Any]:
+        """Get graph statistics"""
+        if not self.graph_service:
+            return {"has_graph": False}
+        
+        stats = self.graph_service.get_graph_stats()
+        stats["has_graph"] = True
+        return stats
+    
+    def visualize_graph(self, filename: str = "graph_visualization.html") -> str:
+        """Create graph visualization"""
+        if not self.graph_service:
+            return ""
+        
+        return self.graph_service.visualize_graph(filename)
+    
+    def add_documents(self, documents: List[Document]) -> bool:
+        """Add new documents to existing vector store and update graph"""
+        if not self.vector_store:
+            raise ServiceException("Vector store not initialized")
+        
+        try:
+            logger.info(f"Adding {len(documents)} documents to vector store")
+            
+            # Filter complex metadata from documents
+            filtered_documents = filter_complex_metadata(documents)
+            logger.info(f"Filtered complex metadata from {len(documents)} documents")
+            
+            # Additional cleanup to ensure no complex types remain
+            for doc in filtered_documents:
+                cleaned_metadata = {}
+                for key, value in doc.metadata.items():
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        cleaned_metadata[key] = value
+                    elif isinstance(value, list):
+                        # Convert lists to strings
+                        cleaned_metadata[key] = " > ".join(str(item) for item in value) if value else ""
+                    else:
+                        # Convert other types to string
+                        cleaned_metadata[key] = str(value)
+                doc.metadata = cleaned_metadata
+            
+            # Add documents to vector store
+            self.vector_store.add_documents(
+                documents=filtered_documents,
+                embedding=self.model_manager.get_embeddings()
+            )
+            
+            logger.info(f"Added {len(filtered_documents)} documents to vector store")
+            
+            # AUTOMATICALLY UPDATE GRAPH DATABASE
+            if self.graph_service:
+                try:
+                    logger.info("Automatically updating graph database with new documents")
+                    # Use incremental update instead of full rebuild
+                    graph_updated = self.graph_service.update_graph_with_documents(filtered_documents)
+                    if graph_updated:
+                        logger.info("Graph database updated incrementally")
+                    else:
+                        logger.warning("Graph database incremental update failed")
+                except Exception as e:
+                    logger.error(f"Failed to update graph database incrementally: {e}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add documents: {e}")
+            return False

@@ -15,10 +15,15 @@ class Config:
     GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv('GEMINI_API_KEY', ''))
     
     # Model Configuration
-    LLM_MODEL: str = "gemini-2.0-flash-exp"
+    LLM_MODEL: str = "gemini-2.5-flash"
     EMBEDDING_MODEL: str = "models/text-embedding-004"
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
     LLM_TEMPERATURE: float = 0.4
+    
+    # Graph Configuration
+    GRAPH_LLM_MODEL: str = "gemini-1.5-flash"
+    ENABLE_GRAPH_PROCESSING: bool = True
+    GRAPH_STORE_DIRECTORY: str = 'data/graphstore'
     
     # Document Processing
     CHUNK_SIZE: int = 1000
@@ -49,6 +54,7 @@ class Config:
         # Ensure directories exist
         Path(self.PERSIST_DIRECTORY).mkdir(parents=True, exist_ok=True)
         Path(self.TEMP_DIR).mkdir(parents=True, exist_ok=True)
+        Path(self.GRAPH_STORE_DIRECTORY).mkdir(parents=True, exist_ok=True)
         
         # Set safety settings
         if not self.SAFETY_SETTINGS:
@@ -98,3 +104,18 @@ class Config:
         6. Menghubungkan dengan topik yang sudah dibahas sebelumnya jika relevan
 
         Pertanyaan yang diperbaiki:"""
+
+    GRAPH_QA_TEMPLATE: str = """Anda adalah asisten AI yang ahli dalam analisis hubungan dan struktur dokumen hukum OJK.
+        Gunakan informasi graph dan koneksi entitas yang diberikan untuk menjawab pertanyaan.
+
+        Informasi Graph: {graph_context}
+
+        Pertanyaan: {question}
+
+        Berikan jawaban yang:
+        1. Memanfaatkan hubungan antar entitas dalam graph
+        2. Menjelaskan koneksi dan relasi yang relevan
+        3. Menggunakan struktur hierarkis dokumen hukum
+        4. Menyebutkan entitas-entitas kunci yang terlibat
+
+        Jawaban:"""

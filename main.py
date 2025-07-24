@@ -1,6 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import List, Optional
 import tempfile
 import os
@@ -13,7 +13,8 @@ import logging
 from config import Config
 from models import (
     ChatMessage, ChatResponse, QueryRequest, UploadResponse, 
-    ChatHistoryResponse, ChunkInfo, HealthResponse, ErrorResponse
+    ChatHistoryResponse, ChunkInfo, HealthResponse, ErrorResponse,
+    SearchType, GraphStats
 )
 from services import ModelManager, DocumentProcessor, VectorStoreManager, RAGService, ServiceException
 
@@ -26,9 +27,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Legal RAG API",
-    description="Advanced RAG system for legal document processing and query answering",
-    version="1.0.0",
+    title="Legal RAG API with Graph Support",
+    description="Advanced RAG system for legal document processing with knowledge graph capabilities",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -54,6 +55,7 @@ class ApplicationState:
     def __init__(self):
         self.chat_history: List[ChatMessage] = []
         self.system_initialized: bool = False
+        self.graph_initialized: bool = False
         self.last_upload_time: Optional[datetime] = None
         self.document_count: int = 0
         self.chunk_count: int = 0
@@ -86,14 +88,20 @@ async def general_exception_handler(request, exc: Exception):
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    logger.info("🚀 Starting Legal RAG API...")
+    logger.info("🚀 Starting Legal RAG API with Graph Support...")
     
     try:
         # Try to load existing vector store
         if vector_store_manager.load_store():
             rag_service.setup_chain()
             app_state.system_initialized = True
-            logger.info("✅ System initialized from existing database")
+            
+            # Check if graph data exists
+            if rag_service.graph_service and rag_service.graph_service.has_graph_data():
+                app_state.graph_initialized = True
+                logger.info("✅ System initialized with existing database and graph data")
+            else:
+                logger.info("✅ System initialized with existing database (no graph data)")
         else:
             logger.info("⚠️ System not initialized. Please upload documents to create a new database")
             
@@ -149,8 +157,11 @@ def _validate_file(file: UploadFile) -> bool:
 
 # API Endpoints
 @app.post("/upload", response_model=UploadResponse)
-async def upload_files(files: List[UploadFile] = File(...)):
-    """Upload and process documents"""
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    enable_graph_processing: bool = True  # This is already good!
+):
+    """Upload and process documents with optional graph processing"""
     if not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -197,25 +208,54 @@ async def upload_files(files: List[UploadFile] = File(...)):
                 detail="No documents could be processed successfully"
             )
         
-        # Create vector store
-        vector_store_manager.create_store(documents)
+        # Handle vector store creation/update
+        is_initial_upload = not app_state.system_initialized
+        
+        if is_initial_upload:
+            # Create new vector store - this will automatically update graph if enabled
+            vector_store_manager.graph_service = rag_service.graph_service  # Add this line!
+            vector_store_manager.create_store(documents)
+        else:
+            # Update existing vector store - this will automatically update graph if enabled
+            vector_store_manager.add_documents(documents)
         
         # Setup RAG chain
         rag_service.setup_chain()
         
+        # The graph processing now happens automatically in vector_store_manager
+        # But we still need to track the results for the response
+        graph_processed = False
+        graph_nodes = 0
+        graph_relationships = 0
+        
+        if config.ENABLE_GRAPH_PROCESSING and enable_graph_processing and rag_service.graph_service:
+            if rag_service.graph_service.has_graph_data():
+                graph_processed = True
+                graph_stats = rag_service.get_graph_stats()
+                graph_nodes = graph_stats.get("nodes", 0)
+                graph_relationships = graph_stats.get("relationships", 0)
+                app_state.graph_initialized = True
+                
+                action = "created" if is_initial_upload else "updated"
+                logger.info(f"Graph {action}: {graph_nodes} nodes, {graph_relationships} relationships")
+        
         # Update application state
         app_state.system_initialized = True
         app_state.last_upload_time = datetime.now()
-        app_state.document_count = len(file_paths)
-        app_state.chunk_count = len(documents)
+        app_state.document_count += len(file_paths)
+        app_state.chunk_count += len(documents)
         
-        logger.info(f"Successfully processed {len(file_paths)} files into {len(documents)} chunks")
+        action_text = "processed" if is_initial_upload else "added"
+        logger.info(f"Successfully {action_text} {len(file_paths)} files into {len(documents)} chunks")
         
         return UploadResponse(
             success=True,
-            message=f"Successfully processed {len(file_paths)} files",
+            message=f"Successfully {action_text} {len(file_paths)} files",
             file_count=len(file_paths),
-            chunk_count=len(documents)
+            chunk_count=len(documents),
+            graph_processed=graph_processed,
+            graph_nodes=graph_nodes,
+            graph_relationships=graph_relationships
         )
         
     except ServiceException as e:
@@ -237,11 +277,18 @@ async def upload_files(files: List[UploadFile] = File(...)):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: QueryRequest):
-    """Chat with the RAG system"""
+    """Chat with the RAG system using different search types"""
     if not app_state.system_initialized:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="System not initialized. Please upload documents first."
+        )
+    
+    # Check if graph search is requested but not available
+    if request.search_type == SearchType.GRAPH and not app_state.graph_initialized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Graph search requested but no graph data available. Please upload documents with graph processing enabled."
         )
     
     try:
@@ -256,6 +303,7 @@ async def chat(request: QueryRequest):
         # Query RAG system
         result = rag_service.query(
             question=request.question,
+            search_type=request.search_type,
             use_enhanced_query=request.use_enhanced_query,
             chat_history=app_state.chat_history
         )
@@ -268,7 +316,7 @@ async def chat(request: QueryRequest):
         )
         app_state.chat_history.append(assistant_message)
         
-        logger.info(f"Query processed successfully in {result.get('processing_time', 0):.2f}s")
+        logger.info(f"Query processed successfully in {result.get('processing_time', 0):.2f}s using {result.get('search_type_used', 'unknown')} search")
         
         return ChatResponse(
             answer=result["answer"],
@@ -276,7 +324,10 @@ async def chat(request: QueryRequest):
             generated_question=result.get("generated_question"),
             enhanced_query=request.use_enhanced_query,
             processing_time=result.get("processing_time"),
-            tokens_used=result.get("tokens_used")
+            tokens_used=result.get("tokens_used"),
+            search_type_used=result.get("search_type_used", SearchType.VECTOR),
+            graph_entities=result.get("graph_entities", []),
+            graph_relationships=result.get("graph_relationships", [])
         )
         
     except ServiceException as e:
@@ -331,12 +382,78 @@ async def get_last_chunks():
         for chunk in chunks
     ]
 
+@app.get("/graph/stats", response_model=GraphStats)
+async def get_graph_stats():
+    """Get graph statistics"""
+    if not app_state.graph_initialized:
+        return GraphStats(has_data=False)
+    
+    try:
+        stats = rag_service.get_graph_stats()
+        return GraphStats(
+            nodes=stats.get("nodes", 0),
+            relationships=stats.get("relationships", 0),
+            node_types=stats.get("node_types", []),
+            relationship_types=stats.get("relationship_types", []),
+            has_data=stats.get("nodes", 0) > 0
+        )
+    except Exception as e:
+        logger.error(f"Failed to get graph stats: {e}")
+        return GraphStats(has_data=False)
+
+@app.post("/graph/visualize")
+async def create_graph_visualization(filename: str = "graph_visualization.html"):
+    """Create and return graph visualization"""
+    if not app_state.graph_initialized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No graph data available for visualization"
+        )
+    
+    try:
+        file_path = rag_service.visualize_graph(filename)
+        
+        if not file_path or not Path(file_path).exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create visualization"
+            )
+        
+        return {"message": f"Visualization created: {filename}", "file_path": file_path}
+        
+    except Exception as e:
+        logger.error(f"Graph visualization failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Visualization failed: {str(e)}"
+        )
+
+@app.get("/graph/visualize/{filename}")
+async def serve_graph_visualization(filename: str):
+    """Serve graph visualization file"""
+    file_path = Path(config.GRAPH_STORE_DIRECTORY) / filename
+    
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visualization file not found"
+        )
+    
+    return FileResponse(
+        path=str(file_path),
+        media_type="text/html",
+        filename=filename
+    )
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
     try:
         # Check vector store status
         vector_store_status = "healthy" if vector_store_manager.vector_store else "not_initialized"
+        
+        # Check graph store status
+        graph_store_status = "healthy" if app_state.graph_initialized else "not_initialized"
         
         # Check API status
         api_status = "healthy"
@@ -346,6 +463,7 @@ async def health_check():
             system_initialized=app_state.system_initialized,
             chat_history_length=len(app_state.chat_history),
             vector_store_status=vector_store_status,
+            graph_store_status=graph_store_status,
             api_status=api_status
         )
         
@@ -356,18 +474,33 @@ async def health_check():
             system_initialized=False,
             chat_history_length=0,
             vector_store_status="error",
+            graph_store_status="error",
             api_status="error"
         )
 
 @app.get("/stats")
 async def get_system_stats():
     """Get system statistics"""
+    graph_stats = {}
+    if app_state.graph_initialized:
+        try:
+            graph_stats = rag_service.get_graph_stats()
+        except Exception as e:
+            logger.error(f"Failed to get graph stats: {e}")
+    
     return {
         "system_initialized": app_state.system_initialized,
+        "graph_initialized": app_state.graph_initialized,
         "chat_history_length": len(app_state.chat_history),
         "last_upload_time": app_state.last_upload_time,
         "document_count": app_state.document_count,
         "chunk_count": app_state.chunk_count,
+        "graph_stats": graph_stats,
+        "search_types_available": [
+            SearchType.VECTOR.value,
+            SearchType.HYBRID.value if app_state.graph_initialized else None,
+            SearchType.GRAPH.value if app_state.graph_initialized else None
+        ],
         "uptime": datetime.now() - datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     }
 
