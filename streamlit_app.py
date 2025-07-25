@@ -239,8 +239,12 @@ class APIClient:
     
     @staticmethod
     def create_graph_visualization(filename: str = "graph_visualization.html") -> Optional[Dict]:
-        """Create graph visualization"""
-        return APIClient._make_request("POST", "/graph/visualize", params={"filename": filename})
+        """Create graph visualization via GET request"""
+        try:
+            return APIClient._make_request("GET", f"/graph/visualize?filename={filename}")
+        except Exception as e:
+            logger.error(f"Failed to create graph visualization: {e}")
+            return None
 
 # UI Components
 def render_sidebar():

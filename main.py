@@ -91,23 +91,29 @@ async def startup_event():
     logger.info("🚀 Starting Legal RAG API with Graph Support...")
     
     try:
+        # FIXED: Connect graph service to vector store manager FIRST
+        if config.ENABLE_GRAPH_PROCESSING:
+            vector_store_manager.graph_service = rag_service.graph_service
+            
         # Try to load existing vector store
         if vector_store_manager.load_store():
             rag_service.setup_chain()
             app_state.system_initialized = True
             
-            # Check if graph data exists
-            if rag_service.graph_service and rag_service.graph_service.has_graph_data():
-                app_state.graph_initialized = True
-                logger.info("✅ System initialized with existing database and graph data")
+            # FIXED: Try to load existing graph data
+            if rag_service.graph_service:
+                if rag_service.graph_service.load_graph_data():
+                    app_state.graph_initialized = True
+                    logger.info("✅ System initialized with existing database and graph data")
+                else:
+                    logger.info("✅ System initialized with existing database (no graph data)")
             else:
-                logger.info("✅ System initialized with existing database (no graph data)")
+                logger.info("✅ System initialized with existing database (graph processing disabled)")
         else:
             logger.info("⚠️ System not initialized. Please upload documents to create a new database")
             
     except Exception as e:
         logger.error(f"Failed to initialize system: {e}")
-        # Continue startup even if initialization fails
 
 # Shutdown event
 @app.on_event("shutdown")
@@ -159,7 +165,7 @@ def _validate_file(file: UploadFile) -> bool:
 @app.post("/upload", response_model=UploadResponse)
 async def upload_files(
     files: List[UploadFile] = File(...),
-    enable_graph_processing: bool = True  # This is already good!
+    enable_graph_processing: bool = True
 ):
     """Upload and process documents with optional graph processing"""
     if not files:
@@ -208,17 +214,24 @@ async def upload_files(
                 detail="No documents could be processed successfully"
             )
         
+        if config.ENABLE_GRAPH_PROCESSING and enable_graph_processing and rag_service.graph_service:
+            vector_store_manager.graph_service = rag_service.graph_service
+        
         # Handle vector store creation/update
         is_initial_upload = not app_state.system_initialized
         
         if is_initial_upload:
-            # Create new vector store - this will automatically update graph if enabled
-            vector_store_manager.graph_service = rag_service.graph_service  # Add this line!
+            # Create new vector store - this will automatically process graph
             vector_store_manager.create_store(documents)
         else:
-            # Update existing vector store - this will automatically update graph if enabled
-            vector_store_manager.add_documents(documents)
-        
+            # Update existing vector store - this will automatically update graph incrementally
+            success = vector_store_manager.add_documents(documents)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to add documents to vector store"
+                )
+            
         # Setup RAG chain
         rag_service.setup_chain()
         
@@ -401,33 +414,55 @@ async def get_graph_stats():
         logger.error(f"Failed to get graph stats: {e}")
         return GraphStats(has_data=False)
 
-@app.post("/graph/visualize")
-async def create_graph_visualization(filename: str = "graph_visualization.html"):
-    """Create and return graph visualization"""
-    if not app_state.graph_initialized:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No graph data available for visualization"
-        )
-    
-    try:
-        file_path = rag_service.visualize_graph(filename)
-        
-        if not file_path or not Path(file_path).exists():
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create visualization"
-            )
-        
-        return {"message": f"Visualization created: {filename}", "file_path": file_path}
-        
-    except Exception as e:
-        logger.error(f"Graph visualization failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Visualization failed: {str(e)}"
-        )
+@app.get("/graph/visualize")
+async def visualize_graph_get(filename: str = "graph_visualization.html"):
+    """Create graph visualization via GET request"""
+    return await visualize_graph_internal(filename)
 
+@app.post("/graph/visualize") 
+async def visualize_graph_post(request: dict = None):
+    """Create graph visualization via POST request"""
+    filename = "graph_visualization.html"
+    if request and "filename" in request:
+        filename = request["filename"]
+    return await visualize_graph_internal(filename)
+
+async def visualize_graph_internal(filename: str):
+    """Internal function to handle graph visualization"""
+    try:
+        if not rag_service:
+            raise HTTPException(status_code=503, detail="RAG service not initialized")
+        
+        if not rag_service.graph_service:
+            raise HTTPException(status_code=404, detail="Graph service not available")
+        
+        if not rag_service.graph_service.has_graph_data():
+            raise HTTPException(status_code=404, detail="No graph data available for visualization")
+        
+        visualization_path = rag_service.visualize_graph(filename)
+        
+        if not visualization_path:
+            raise HTTPException(status_code=500, detail="Failed to create graph visualization")
+        
+        # Check if file actually exists
+        if not Path(visualization_path).exists():
+            raise HTTPException(status_code=500, detail="Visualization file was not created")
+        
+        return {
+            "message": "Graph visualization created successfully",
+            "file_path": visualization_path,
+            "filename": filename,
+            "success": True
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Graph visualization endpoint error: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    
 @app.get("/graph/visualize/{filename}")
 async def serve_graph_visualization(filename: str):
     """Serve graph visualization file"""
