@@ -1,9 +1,12 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from dataclasses import dataclass, field
 from pathlib import Path
 from langchain_google_genai import HarmCategory, HarmBlockThreshold
 from dotenv import load_dotenv
+
+from exceptions import ConfigurationException
+
 load_dotenv()
 
 
@@ -15,15 +18,20 @@ class Config:
     GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv('GEMINI_API_KEY', ''))
     
     # Model Configuration
-    LLM_MODEL: str = "gemini-2.0-flash-exp"
+    LLM_MODEL: str = "gemini-2.5-flash"
     EMBEDDING_MODEL: str = "models/text-embedding-004"
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
     LLM_TEMPERATURE: float = 0.4
     
+    # Graph Configuration
+    GRAPH_LLM_MODEL: str = "gemini-1.5-flash"
+    ENABLE_GRAPH_PROCESSING: bool = True
+    GRAPH_STORE_DIRECTORY: str = 'data/graphstore'
+    
     # Document Processing
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
-    MAX_DOCUMENT_SIZE: int = 10_000_000  # 10MB limit
+    MAX_DOCUMENT_SIZE: int = 10_000_000
     
     # Retrieval Configuration
     SEARCH_K: int = 20
@@ -46,11 +54,21 @@ class Config:
     
     def __post_init__(self):
         """Initialize computed fields and validate configuration"""
-        # Ensure directories exist
-        Path(self.PERSIST_DIRECTORY).mkdir(parents=True, exist_ok=True)
-        Path(self.TEMP_DIR).mkdir(parents=True, exist_ok=True)
+        self._ensure_directories_exist()
+        self._set_safety_settings()
+        self._validate_api_key()
+    
+    def _ensure_directories_exist(self):
+        directories = [
+            self.PERSIST_DIRECTORY,
+            self.TEMP_DIR,
+            self.GRAPH_STORE_DIRECTORY
+        ]
         
-        # Set safety settings
+        for directory in directories:
+            Path(directory).mkdir(parents=True, exist_ok=True)
+    
+    def _set_safety_settings(self):
         if not self.SAFETY_SETTINGS:
             self.SAFETY_SETTINGS = {
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
@@ -58,10 +76,10 @@ class Config:
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             }
-        
-        # Validate API key
+    
+    def _validate_api_key(self):
         if not self.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is required. Set it as environment variable or in config.")
+            raise ConfigurationException("GEMINI_API_KEY is required. Set it as environment variable or in config.")
     
     # Prompt Templates
     QA_TEMPLATE: str = """Anda adalah asisten AI yang ahli dalam hukum dan peraturan Otoritas Jasa Keuangan (OJK). 
@@ -74,6 +92,14 @@ class Config:
         4. Jika ada nomor pasal atau ayat yang spesifik, sebutkan dengan jelas
         5. Berikan penjelasan yang praktis dan aplikatif
         6. Jika informasi dari multiple sources, jelaskan dengan jelas sumber masing-masing
+        7. WAJIB menyebutkan sumber dokumen dan halaman jika tersedia dalam metadata
+
+        Format konteks mencakup:
+        - [SUMBER]: Nama file/dokumen
+        - [HALAMAN]: Nomor halaman
+        - [BAGIAN]: Struktur hierarkis (Pasal, Ayat, dll)
+        - [TANGGAL]: Kapan dokumen diproses
+        - [KONTEN]: Isi dokumen
 
         Konteks: {context}
 
@@ -98,3 +124,18 @@ class Config:
         6. Menghubungkan dengan topik yang sudah dibahas sebelumnya jika relevan
 
         Pertanyaan yang diperbaiki:"""
+
+    GRAPH_QA_TEMPLATE: str = """Anda adalah asisten AI yang ahli dalam analisis hubungan dan struktur dokumen hukum OJK.
+        Gunakan informasi graph dan koneksi entitas yang diberikan untuk menjawab pertanyaan.
+
+        Informasi Graph: {graph_context}
+
+        Pertanyaan: {question}
+
+        Berikan jawaban yang:
+        1. Memanfaatkan hubungan antar entitas dalam graph
+        2. Menjelaskan koneksi dan relasi yang relevan
+        3. Menggunakan struktur hierarkis dokumen hukum
+        4. Menyebutkan entitas-entitas kunci yang terlibat
+
+        Jawaban:"""

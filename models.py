@@ -10,6 +10,12 @@ class MessageRole(str, Enum):
     SYSTEM = "system"
 
 
+class SearchType(str, Enum):
+    VECTOR = "vector"
+    GRAPH = "graph"
+    HYBRID = "hybrid"
+
+
 class ChatMessage(BaseModel):
     role: MessageRole
     content: str
@@ -36,6 +42,19 @@ class SourceDocument(BaseModel):
         return v.strip()
 
 
+class GraphEntity(BaseModel):
+    id: str
+    type: str
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphRelationship(BaseModel):
+    source: str
+    target: str
+    type: str
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ChatResponse(BaseModel):
     answer: str
     source_documents: List[SourceDocument] = Field(default_factory=list)
@@ -43,6 +62,9 @@ class ChatResponse(BaseModel):
     enhanced_query: bool = False
     processing_time: Optional[float] = None
     tokens_used: Optional[int] = None
+    search_type_used: Optional[SearchType] = SearchType.VECTOR
+    graph_entities: List[GraphEntity] = Field(default_factory=list)
+    graph_relationships: List[GraphRelationship] = Field(default_factory=list)
     
     @validator('answer')
     def answer_not_empty(cls, v):
@@ -54,6 +76,7 @@ class ChatResponse(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     use_enhanced_query: bool = False
+    search_type: SearchType = SearchType.VECTOR
     max_results: Optional[int] = Field(default=5, ge=1, le=20)
     include_metadata: bool = True
     
@@ -69,6 +92,9 @@ class UploadResponse(BaseModel):
     message: str
     file_count: int = 0
     chunk_count: int = 0
+    graph_processed: bool = False
+    graph_nodes: int = 0
+    graph_relationships: int = 0
     processing_time: Optional[float] = None
     errors: List[str] = Field(default_factory=list)
 
@@ -100,11 +126,20 @@ class ChunkInfo(BaseModel):
         return v.strip()
 
 
+class GraphStats(BaseModel):
+    nodes: int = 0
+    relationships: int = 0
+    node_types: List[str] = Field(default_factory=list)
+    relationship_types: List[str] = Field(default_factory=list)
+    has_data: bool = False
+
+
 class HealthResponse(BaseModel):
     status: str
     system_initialized: bool
     chat_history_length: int
     vector_store_status: str
+    graph_store_status: str = "not_initialized"
     api_status: str
     timestamp: datetime = Field(default_factory=datetime.now)
 

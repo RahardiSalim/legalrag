@@ -1,10 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from typing import List, Optional
+from fastapi.responses import JSONResponse, FileResponse
+from typing import List
 import tempfile
-import os
-import zipfile
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -12,28 +10,31 @@ import logging
 
 from config import Config
 from models import (
-    ChatMessage, ChatResponse, QueryRequest, UploadResponse, 
-    ChatHistoryResponse, ChunkInfo, HealthResponse, ErrorResponse
+    QueryRequest, UploadResponse, ChatResponse, ChatHistoryResponse,
+    ChunkInfo, HealthResponse, ErrorResponse, GraphStats
 )
-from services import ModelManager, DocumentProcessor, VectorStoreManager, RAGService, ServiceException
+from exceptions import ServiceException
+from model_manager import ModelManager
+from document_processor import DocumentProcessor
+from vector_store_manager import VectorStoreManager
+from rag_service import RAGService
+from application_state import ApplicationState
+from api_handlers import UploadHandler, ChatHandler, SystemHandler, GraphHandler
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
 app = FastAPI(
-    title="Legal RAG API",
-    description="Advanced RAG system for legal document processing and query answering",
-    version="1.0.0",
+    title="Legal RAG API with Graph Support",
+    description="Advanced RAG system for legal document processing with knowledge graph capabilities",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,25 +43,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global instances
 config = Config()
 model_manager = ModelManager(config)
 document_processor = DocumentProcessor(config)
 vector_store_manager = VectorStoreManager(config, model_manager)
 rag_service = RAGService(config, model_manager, vector_store_manager)
 
-# Application state
-class ApplicationState:
-    def __init__(self):
-        self.chat_history: List[ChatMessage] = []
-        self.system_initialized: bool = False
-        self.last_upload_time: Optional[datetime] = None
-        self.document_count: int = 0
-        self.chunk_count: int = 0
-
 app_state = ApplicationState()
+upload_handler = UploadHandler(config, document_processor, vector_store_manager, rag_service, app_state)
+chat_handler = ChatHandler(rag_service, app_state)
+system_handler = SystemHandler(rag_service, vector_store_manager, app_state)
+graph_handler = GraphHandler(config, rag_service, app_state)
 
-# Exception handlers
 @app.exception_handler(ServiceException)
 async def service_exception_handler(request, exc: ServiceException):
     return JSONResponse(
@@ -82,296 +76,104 @@ async def general_exception_handler(request, exc: Exception):
         ).dict()
     )
 
-# Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Initialize services on startup"""
-    logger.info("🚀 Starting Legal RAG API...")
+    logger.info("🚀 Starting Legal RAG API with Graph Support...")
     
     try:
-        # Try to load existing vector store
+        if config.ENABLE_GRAPH_PROCESSING:
+            vector_store_manager.graph_service = rag_service.graph_service
+            
         if vector_store_manager.load_store():
             rag_service.setup_chain()
             app_state.system_initialized = True
-            logger.info("✅ System initialized from existing database")
+            
+            if rag_service.graph_service:
+                if rag_service.graph_service.load_graph_data():
+                    app_state.graph_initialized = True
+                    logger.info("✅ System initialized with existing database and graph data")
+                else:
+                    logger.info("✅ System initialized with existing database (no graph data)")
+            else:
+                logger.info("✅ System initialized with existing database (graph processing disabled)")
         else:
             logger.info("⚠️ System not initialized. Please upload documents to create a new database")
             
     except Exception as e:
         logger.error(f"Failed to initialize system: {e}")
-        # Continue startup even if initialization fails
 
-# Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Clean up resources on shutdown"""
     logger.info("🔄 Shutting down Legal RAG API...")
     
-    # Clean up temporary files
     temp_dir = Path(config.TEMP_DIR)
     if temp_dir.exists():
         shutil.rmtree(temp_dir, ignore_errors=True)
     
     logger.info("✅ Shutdown complete")
 
-# Helper functions
-def _extract_files_from_zip(zip_path: str, extract_to: str) -> List[str]:
-    """Extract files from ZIP archive"""
-    extracted_files = []
-    
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        for file_info in zip_ref.filelist:
-            if not file_info.is_dir():
-                file_extension = Path(file_info.filename).suffix.lower()
-                if file_extension in config.SUPPORTED_EXTENSIONS:
-                    extracted_path = zip_ref.extract(file_info, extract_to)
-                    extracted_files.append(extracted_path)
-    
-    return extracted_files
-
-def _save_uploaded_file(file: UploadFile, temp_dir: str) -> str:
-    """Save uploaded file to temporary directory"""
-    file_path = Path(temp_dir) / file.filename
-    
-    with open(file_path, 'wb') as f:
-        content = file.file.read()
-        f.write(content)
-    
-    return str(file_path)
-
-def _validate_file(file: UploadFile) -> bool:
-    """Validate uploaded file"""
-    if not file.filename:
-        return False
-    
-    file_extension = Path(file.filename).suffix.lower()
-    return file_extension in config.SUPPORTED_EXTENSIONS or file_extension == '.zip'
-
-# API Endpoints
 @app.post("/upload", response_model=UploadResponse)
-async def upload_files(files: List[UploadFile] = File(...)):
-    """Upload and process documents"""
-    if not files:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No files provided"
-        )
-    
-    # Validate files
-    for file in files:
-        if not _validate_file(file):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported file type: {file.filename}"
-            )
-    
-    temp_dir = None
-    try:
-        # Create temporary directory
-        temp_dir = tempfile.mkdtemp(dir=config.TEMP_DIR)
-        file_paths = []
-        
-        # Process each uploaded file
-        for file in files:
-            file_path = _save_uploaded_file(file, temp_dir)
-            
-            if file.filename.endswith('.zip'):
-                # Extract ZIP contents
-                extracted_files = _extract_files_from_zip(file_path, temp_dir)
-                file_paths.extend(extracted_files)
-            else:
-                file_paths.append(file_path)
-        
-        if not file_paths:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No supported files found in uploaded files"
-            )
-        
-        # Process documents
-        documents = document_processor.process_documents(file_paths)
-        
-        if not documents:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No documents could be processed successfully"
-            )
-        
-        # Create vector store
-        vector_store_manager.create_store(documents)
-        
-        # Setup RAG chain
-        rag_service.setup_chain()
-        
-        # Update application state
-        app_state.system_initialized = True
-        app_state.last_upload_time = datetime.now()
-        app_state.document_count = len(file_paths)
-        app_state.chunk_count = len(documents)
-        
-        logger.info(f"Successfully processed {len(file_paths)} files into {len(documents)} chunks")
-        
-        return UploadResponse(
-            success=True,
-            message=f"Successfully processed {len(file_paths)} files",
-            file_count=len(file_paths),
-            chunk_count=len(documents)
-        )
-        
-    except ServiceException as e:
-        logger.error(f"Service error during upload: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error during upload: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing files: {str(e)}"
-        )
-    finally:
-        # Clean up temporary directory
-        if temp_dir and Path(temp_dir).exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    enable_graph_processing: bool = True
+):
+    return await upload_handler.handle_upload(files, enable_graph_processing)
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: QueryRequest):
-    """Chat with the RAG system"""
-    if not app_state.system_initialized:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="System not initialized. Please upload documents first."
-        )
-    
-    try:
-        # Add user message to history
-        user_message = ChatMessage(
-            role="user",
-            content=request.question,
-            timestamp=datetime.now()
-        )
-        app_state.chat_history.append(user_message)
-        
-        # Query RAG system
-        result = rag_service.query(
-            question=request.question,
-            use_enhanced_query=request.use_enhanced_query,
-            chat_history=app_state.chat_history
-        )
-        
-        # Add assistant message to history
-        assistant_message = ChatMessage(
-            role="assistant",
-            content=result["answer"],
-            timestamp=datetime.now()
-        )
-        app_state.chat_history.append(assistant_message)
-        
-        logger.info(f"Query processed successfully in {result.get('processing_time', 0):.2f}s")
-        
-        return ChatResponse(
-            answer=result["answer"],
-            source_documents=result["source_documents"],
-            generated_question=result.get("generated_question"),
-            enhanced_query=request.use_enhanced_query,
-            processing_time=result.get("processing_time"),
-            tokens_used=result.get("tokens_used")
-        )
-        
-    except ServiceException as e:
-        logger.error(f"Service error during chat: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error during chat: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing query: {str(e)}"
-        )
+    return await chat_handler.handle_chat(request)
 
 @app.get("/history", response_model=ChatHistoryResponse)
 async def get_chat_history():
-    """Get chat history"""
-    return ChatHistoryResponse(
-        messages=app_state.chat_history,
-        total_messages=len(app_state.chat_history)
-    )
+    return system_handler.get_chat_history()
 
 @app.post("/clear-history")
 async def clear_chat_history():
-    """Clear chat history"""
-    app_state.chat_history.clear()
-    rag_service.clear_memory()
-    
-    logger.info("Chat history cleared")
-    return {"message": "Chat history cleared successfully"}
+    return system_handler.clear_chat_history()
 
 @app.get("/chunks", response_model=List[ChunkInfo])
 async def get_last_chunks():
-    """Get chunks used in the last query"""
-    if not app_state.system_initialized:
+    return system_handler.get_last_chunks()
+
+@app.get("/graph/stats", response_model=GraphStats)
+async def get_graph_stats():
+    return system_handler.get_graph_stats()
+
+@app.get("/graph/visualize")
+async def visualize_graph_get(filename: str = "graph_visualization.html"):
+    return await graph_handler.handle_visualization(filename)
+
+@app.post("/graph/visualize") 
+async def visualize_graph_post(request: dict = None):
+    filename = "graph_visualization.html"
+    if request and "filename" in request:
+        filename = request["filename"]
+    return await graph_handler.handle_visualization(filename)
+
+@app.get("/graph/visualize/{filename}")
+async def serve_graph_visualization(filename: str):
+    file_path = Path(config.GRAPH_STORE_DIRECTORY) / filename
+    
+    if not file_path.exists():
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="System not initialized"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visualization file not found"
         )
     
-    chunks = rag_service.get_last_chunks()
-    
-    return [
-        ChunkInfo(
-            content=chunk.page_content,
-            metadata=chunk.metadata,
-            score=chunk.metadata.get("score"),
-            rerank_score=chunk.metadata.get("rerank_score"),
-            chunk_id=chunk.metadata.get("chunk_id")
-        )
-        for chunk in chunks
-    ]
+    return FileResponse(
+        path=str(file_path),
+        media_type="text/html",
+        filename=filename
+    )
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
-    try:
-        # Check vector store status
-        vector_store_status = "healthy" if vector_store_manager.vector_store else "not_initialized"
-        
-        # Check API status
-        api_status = "healthy"
-        
-        return HealthResponse(
-            status="healthy",
-            system_initialized=app_state.system_initialized,
-            chat_history_length=len(app_state.chat_history),
-            vector_store_status=vector_store_status,
-            api_status=api_status
-        )
-        
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return HealthResponse(
-            status="unhealthy",
-            system_initialized=False,
-            chat_history_length=0,
-            vector_store_status="error",
-            api_status="error"
-        )
+    return system_handler.get_health_status()
 
 @app.get("/stats")
 async def get_system_stats():
-    """Get system statistics"""
-    return {
-        "system_initialized": app_state.system_initialized,
-        "chat_history_length": len(app_state.chat_history),
-        "last_upload_time": app_state.last_upload_time,
-        "document_count": app_state.document_count,
-        "chunk_count": app_state.chunk_count,
-        "uptime": datetime.now() - datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    }
+    return system_handler.get_system_stats()
 
-# Run the app
 if __name__ == "__main__":
     import uvicorn
     
