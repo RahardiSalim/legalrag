@@ -4,6 +4,9 @@ from langchain.schema import Document
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from sentence_transformers import CrossEncoder
 
+from graph_interfaces import GraphService, GraphSearchResult
+
+
 class ModelManagerInterface(ABC):
     @abstractmethod
     def get_llm(self) -> ChatGoogleGenerativeAI:
@@ -17,6 +20,7 @@ class ModelManagerInterface(ABC):
     def get_reranker(self) -> CrossEncoder:
         pass
 
+
 class DocumentProcessorInterface(ABC):
     @abstractmethod
     def process_documents(self, file_paths: List[str]) -> List[Document]:
@@ -25,6 +29,7 @@ class DocumentProcessorInterface(ABC):
     @abstractmethod
     def create_content_hash(self, content: str) -> str:
         pass
+
 
 class VectorStoreInterface(ABC):
     @abstractmethod
@@ -43,18 +48,6 @@ class VectorStoreInterface(ABC):
     def add_documents(self, documents: List[Document]) -> bool:
         pass
 
-class GraphServiceInterface(ABC):
-    @abstractmethod
-    def process_documents_to_graph(self, documents: List[Document]) -> bool:
-        pass
-    
-    @abstractmethod
-    def search_graph(self, query: str) -> Dict[str, Any]:
-        pass
-    
-    @abstractmethod
-    def has_graph_data(self) -> bool:
-        pass
 
 class RAGServiceInterface(ABC):
     @abstractmethod
@@ -67,4 +60,16 @@ class RAGServiceInterface(ABC):
     
     @abstractmethod
     def clear_memory(self) -> None:
+        pass
+    
+    @abstractmethod
+    def get_last_chunks(self) -> List[Document]:
+        pass
+    
+    @abstractmethod
+    def get_graph_stats(self) -> Dict[str, Any]:
+        pass
+    
+    @abstractmethod
+    def visualize_graph(self, filename: str) -> str:
         pass

@@ -1,9 +1,12 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from dataclasses import dataclass, field
 from pathlib import Path
 from langchain_google_genai import HarmCategory, HarmBlockThreshold
 from dotenv import load_dotenv
+
+from exceptions import ConfigurationException
+
 load_dotenv()
 
 
@@ -28,7 +31,7 @@ class Config:
     # Document Processing
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
-    MAX_DOCUMENT_SIZE: int = 10_000_000  # 10MB limit
+    MAX_DOCUMENT_SIZE: int = 10_000_000
     
     # Retrieval Configuration
     SEARCH_K: int = 20
@@ -51,12 +54,21 @@ class Config:
     
     def __post_init__(self):
         """Initialize computed fields and validate configuration"""
-        # Ensure directories exist
-        Path(self.PERSIST_DIRECTORY).mkdir(parents=True, exist_ok=True)
-        Path(self.TEMP_DIR).mkdir(parents=True, exist_ok=True)
-        Path(self.GRAPH_STORE_DIRECTORY).mkdir(parents=True, exist_ok=True)
+        self._ensure_directories_exist()
+        self._set_safety_settings()
+        self._validate_api_key()
+    
+    def _ensure_directories_exist(self):
+        directories = [
+            self.PERSIST_DIRECTORY,
+            self.TEMP_DIR,
+            self.GRAPH_STORE_DIRECTORY
+        ]
         
-        # Set safety settings
+        for directory in directories:
+            Path(directory).mkdir(parents=True, exist_ok=True)
+    
+    def _set_safety_settings(self):
         if not self.SAFETY_SETTINGS:
             self.SAFETY_SETTINGS = {
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
@@ -64,10 +76,10 @@ class Config:
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             }
-        
-        # Validate API key
+    
+    def _validate_api_key(self):
         if not self.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is required. Set it as environment variable or in config.")
+            raise ConfigurationException("GEMINI_API_KEY is required. Set it as environment variable or in config.")
     
     # Prompt Templates
     QA_TEMPLATE: str = """Anda adalah asisten AI yang ahli dalam hukum dan peraturan Otoritas Jasa Keuangan (OJK). 
