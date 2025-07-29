@@ -80,6 +80,14 @@ class Config:
         4. Jika ada nomor pasal atau ayat yang spesifik, sebutkan dengan jelas
         5. Berikan penjelasan yang praktis dan aplikatif
         6. Jika informasi dari multiple sources, jelaskan dengan jelas sumber masing-masing
+        7. WAJIB menyebutkan sumber dokumen dan halaman jika tersedia dalam metadata
+
+        Format konteks mencakup:
+        - [SUMBER]: Nama file/dokumen
+        - [HALAMAN]: Nomor halaman
+        - [BAGIAN]: Struktur hierarkis (Pasal, Ayat, dll)
+        - [TANGGAL]: Kapan dokumen diproses
+        - [KONTEN]: Isi dokumen
 
         Konteks: {context}
 

@@ -5,6 +5,8 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
+from datetime import datetime
+from pathlib import Path
 
 from config import Config
 from interfaces import RAGServiceInterface, ModelManagerInterface, VectorStoreInterface
@@ -106,9 +108,24 @@ class RAGService(RAGServiceInterface):
             processed_question = self._enhance_query(question, chat_history)
             logger.info(f"Enhanced query: {processed_question}")
 
+        # Get raw result first
         result = self.chain({"question": processed_question})
         self.last_retrieved_chunks = result.get("source_documents", [])
 
+        # ENHANCED: Create context with metadata for final answer
+        if self.last_retrieved_chunks:
+            enhanced_context = self._format_context_with_metadata(self.last_retrieved_chunks)
+            
+            # Create final prompt with enhanced context
+            final_prompt = f"""
+    {self.config.QA_TEMPLATE.replace('{context}', enhanced_context).replace('{question}', processed_question)}
+    """
+            
+            # Get enhanced answer with metadata context
+            llm = self.model_manager.get_llm()
+            enhanced_response = llm.invoke(final_prompt)
+            result["answer"] = enhanced_response.content
+        
         source_documents = [
             SourceDocument(
                 content=doc.page_content,
@@ -190,6 +207,7 @@ class RAGService(RAGServiceInterface):
         }
     
     def _query_hybrid(self, question: str, use_enhanced_query: bool, chat_history: List, start_time: float) -> Dict[str, Any]:
+        # Get vector result with enhanced context
         vector_result = self._query_vector(question, use_enhanced_query, chat_history, start_time)
         
         graph_entities = []
@@ -221,18 +239,27 @@ class RAGService(RAGServiceInterface):
                 for rel in graph_result.get("relevant_relationships", [])
             ]
             
+            # Enhanced hybrid combining with metadata context
             if graph_result["context"] and graph_result["context"] != "Tidak ditemukan informasi graph yang relevan dengan pertanyaan.":
+                
+                # Get source context from vector search
+                vector_context = self._format_context_with_metadata(self.last_retrieved_chunks) if self.last_retrieved_chunks else "Tidak ada konteks vector"
+                
                 enhanced_prompt = f"""
-                Konteks dari pencarian vektor: {vector_result['answer']}
-                
-                Informasi tambahan dari graph dengan semantic search dan traversal: {graph_result['context']}
-                
-                Entry points yang ditemukan: {graph_result.get('entry_points', [])}
-                
-                Pertanyaan: {question}
-                
-                Berikan jawaban yang menggabungkan informasi dari kedua sumber di atas dengan fokus pada hubungan semantik:
-                """
+    KONTEKS DARI PENCARIAN VECTOR (dengan metadata):
+    {vector_context}
+
+    INFORMASI TAMBAHAN DARI KNOWLEDGE GRAPH:
+    {graph_result['context']}
+
+    ENTRY POINTS YANG DITEMUKAN: {graph_result.get('entry_points', [])}
+
+    PERTANYAAN: {question}
+
+    Berikan jawaban yang menggabungkan informasi dari kedua sumber di atas. 
+    WAJIB menyebutkan sumber dokumen, halaman, dan struktur hierarkis jika tersedia dalam metadata.
+    Fokus pada hubungan semantik dan pastikan akurasi referensi hukum:
+    """
                 
                 llm = self.model_manager.get_llm()
                 enhanced_response = llm.invoke(enhanced_prompt)
@@ -283,3 +310,104 @@ class RAGService(RAGServiceInterface):
             formatted_history.append(f"{role}: {content}")
         
         return "\n".join(formatted_history) if formatted_history else "Tidak ada riwayat percakapan sebelumnya."
+    
+    def _format_context_with_metadata(self, documents: List[Document]) -> str:
+        """Format context with essential metadata for legal documents"""
+        context_parts = []
+        
+        for i, doc in enumerate(documents, 1):
+            metadata = doc.metadata
+            
+            # Extract essential metadata
+            source = self._extract_source_name(metadata.get('source', 'Unknown'))
+            page = metadata.get('page', metadata.get('page_label', 'Unknown'))
+            
+            # Legal document structure
+            section_info = self._extract_section_info(metadata)
+            
+            # Processing date (convert timestamp to readable date)
+            processed_date = self._format_processed_date(metadata.get('processed_at'))
+            
+            # Document type context
+            doc_type = metadata.get('document_type', 'general')
+            
+            # Build context header with essential info
+            context_header = f"""
+                [DOKUMEN {i}]
+                SUMBER: {source}
+                HALAMAN: {page}
+                STRUKTUR: {section_info}
+                DIPROSES: {processed_date}
+                TIPE: {doc_type.upper()}
+
+                KONTEN:"""
+            
+            context_parts.append(context_header)
+            context_parts.append(doc.page_content)
+            context_parts.append("=" * 80)  # Separator
+        
+        return "\n".join(context_parts)
+
+    def _extract_source_name(self, source_path: str) -> str:
+        """Extract clean document name from path"""
+        try:
+            # Remove temp directory path and get clean filename
+            source_name = Path(source_path).name
+            
+            # Clean up temp folder artifacts
+            if 'tmp' in source_name.lower():
+                # Try to extract actual filename from temp path
+                parts = source_name.split('\\')
+                for part in reversed(parts):
+                    if not part.startswith('tmp') and part.endswith('.pdf'):
+                        source_name = part
+                        break
+            
+            # Limit length for readability
+            if len(source_name) > 60:
+                source_name = source_name[:57] + "..."
+                
+            return source_name
+            
+        except Exception:
+            return "Unknown Document"
+
+    def _extract_section_info(self, metadata: Dict) -> str:
+        """Extract legal document structure information"""
+        section_parts = []
+        
+        # Get parent sections hierarchy
+        parent_sections = metadata.get('parent_sections', '')
+        if parent_sections:
+            section_parts.append(parent_sections)
+        
+        # Get current section
+        section_type = metadata.get('section_type', '')
+        section_number = metadata.get('section_number', '')
+        
+        if section_type and section_number:
+            current_section = f"{section_type.upper()} {section_number}"
+            section_parts.append(current_section)
+        
+        # If no hierarchical info, try to get chunk context
+        if not section_parts:
+            chunk_id = metadata.get('chunk_id', '')
+            if chunk_id:
+                section_parts.append(f"Chunk: {chunk_id}")
+        
+        return " > ".join(section_parts) if section_parts else "General Content"
+
+    def _format_processed_date(self, timestamp) -> str:
+        """Convert timestamp to readable date"""
+        if not timestamp:
+            return "Unknown"
+        
+        try:
+            # Convert timestamp to datetime
+            if isinstance(timestamp, (int, float)):
+                dt = datetime.fromtimestamp(timestamp)
+                return dt.strftime("%d/%m/%Y %H:%M")
+            else:
+                return str(timestamp)
+        except Exception:
+            return "Unknown Date"
