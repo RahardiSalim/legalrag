@@ -44,7 +44,7 @@ class VectorStoreManager(VectorStoreInterface):
             self._setup_hybrid_retriever(filtered_documents)
             
             if self.graph_service:
-                self._update_graph_with_documents(filtered_documents)
+                self._update_with_documents(filtered_documents)
             
             logger.info("Vector store created successfully")
             return self.vector_store
@@ -176,10 +176,10 @@ class VectorStoreManager(VectorStoreInterface):
             logger.error(f"Failed to setup hybrid retriever from store: {e}")
             raise VectorStoreException(f"Failed to setup hybrid retriever from store: {e}")
     
-    def _update_graph_with_documents(self, documents: List[Document]):
+    def _update_with_documents(self, documents: List[Document]):
         try:
             logger.info("Updating graph database with new documents")
-            graph_updated = self.graph_service.process_documents_to_graph(documents)
+            graph_updated = self.graph_service.process_documents(documents)
             if graph_updated:
                 logger.info("Graph database updated successfully")
             else:
@@ -191,19 +191,19 @@ class VectorStoreManager(VectorStoreInterface):
         try:
             logger.info("Updating graph database incrementally with new documents")
             
-            if self.graph_service.has_graph_data():
-                graph_updated = self.graph_service.update_graph_with_documents(documents)
+            if self.graph_service.has_data():
+                graph_updated = self.graph_service.update_with_documents(documents)
                 if graph_updated:
                     logger.info("Graph database updated incrementally successfully")
                 else:
                     logger.warning("Incremental graph update failed, attempting full rebuild")
-                    graph_updated = self.graph_service.process_documents_to_graph(self._documents_cache)
+                    graph_updated = self.graph_service.process_documents(self._documents_cache)
                     if graph_updated:
                         logger.info("Graph database rebuilt successfully")
                     else:
                         logger.error("Both incremental and full graph updates failed")
             else:
-                graph_updated = self.graph_service.process_documents_to_graph(documents)
+                graph_updated = self.graph_service.process_documents(documents)
                 if graph_updated:
                     logger.info("New graph database created successfully")
                 else:

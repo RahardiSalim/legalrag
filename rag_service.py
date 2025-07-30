@@ -186,8 +186,6 @@ class RAGService(RAGServiceInterface):
                 verbose=True
             )
             
-            if self.graph_service:
-                self.graph_service._load_existing_data()
             
             logger.info("RAG chain setup complete")
             

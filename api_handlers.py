@@ -130,7 +130,7 @@ class UploadHandler:
         graph_relationships = 0
         
         if self.config.ENABLE_GRAPH_PROCESSING and enable_graph_processing and self.rag_service.graph_service:
-            if self.rag_service.graph_service.has_graph_data():
+            if self.rag_service.graph_service.has_data():
                 graph_processed = True
                 stats = self.rag_service.get_graph_stats()
                 graph_nodes = stats.get("nodes", 0)
@@ -335,7 +335,7 @@ class GraphHandler:
             if not self.rag_service.graph_service:
                 raise HTTPException(status_code=404, detail="Graph service not available")
             
-            if not self.rag_service.graph_service.has_graph_data():
+            if not self.rag_service.graph_service.has_data():
                 raise HTTPException(status_code=404, detail="No graph data available for visualization")
             
             visualization_path = self.rag_service.visualize_graph(filename)

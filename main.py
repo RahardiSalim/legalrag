@@ -89,7 +89,7 @@ async def startup_event():
             app_state.system_initialized = True
             
             if rag_service.graph_service:
-                if rag_service.graph_service.load_graph_data():
+                if rag_service.graph_service.has_data():
                     app_state.graph_initialized = True
                     logger.info("✅ System initialized with existing database and graph data")
                 else:
