@@ -24,7 +24,7 @@ class Config:
     LLM_TEMPERATURE: float = 0.4
     
     # Graph Configuration
-    GRAPH_LLM_MODEL: str = "gemini-1.5-flash"
+    GRAPH_LLM_MODEL: str = "gemini-2.5-flash"
     ENABLE_GRAPH_PROCESSING: bool = True
     GRAPH_STORE_DIRECTORY: str = 'data/graphstore'
     

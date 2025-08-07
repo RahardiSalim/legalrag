@@ -11,15 +11,18 @@ import logging
 from config import Config
 from models import (
     QueryRequest, UploadResponse, ChatResponse, ChatHistoryResponse,
-    ChunkInfo, HealthResponse, ErrorResponse, GraphStats
+    ChunkInfo, HealthResponse, ErrorResponse, GraphStats, FeedbackRequest,
+    FeedbackResponse, FeedbackStatsResponse, EnhancedChatResponse
 )
+from feedback_system import EnhancedRAGService, FeedbackStorage, FeedbackLearner
+
 from exceptions import ServiceException
 from model_manager import ModelManager
 from document_processor import DocumentProcessor
 from vector_store_manager import VectorStoreManager
 from rag_service import RAGService
 from application_state import ApplicationState
-from api_handlers import UploadHandler, ChatHandler, SystemHandler, GraphHandler
+from api_handlers import UploadHandler, ChatHandler, SystemHandler, GraphHandler, FeedbackHandler, EnhancedChatHandler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +57,10 @@ upload_handler = UploadHandler(config, document_processor, vector_store_manager,
 chat_handler = ChatHandler(rag_service, app_state)
 system_handler = SystemHandler(rag_service, vector_store_manager, app_state)
 graph_handler = GraphHandler(config, rag_service, app_state)
+
+enhanced_rag_service = EnhancedRAGService(rag_service, config)
+feedback_handler = FeedbackHandler(enhanced_rag_service)
+enhanced_chat_handler = EnhancedChatHandler(enhanced_rag_service, app_state)
 
 @app.exception_handler(ServiceException)
 async def service_exception_handler(request, exc: ServiceException):
@@ -119,9 +126,10 @@ async def upload_files(
 ):
     return await upload_handler.handle_upload(files, enable_graph_processing)
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post("/chat", response_model=EnhancedChatResponse)
 async def chat(request: QueryRequest):
-    return await chat_handler.handle_chat(request)
+    """Chat endpoint with feedback learning (replaces old chat)"""
+    return await enhanced_chat_handler.handle_enhanced_chat(request)
 
 @app.get("/history", response_model=ChatHistoryResponse)
 async def get_chat_history():
@@ -173,6 +181,26 @@ async def health_check():
 @app.get("/stats")
 async def get_system_stats():
     return system_handler.get_system_stats()
+
+@app.post("/feedback", response_model=FeedbackResponse)
+async def store_feedback(request: FeedbackRequest):
+    """Store user feedback for learning"""
+    return await feedback_handler.store_feedback(request)
+
+@app.get("/feedback/stats", response_model=FeedbackStatsResponse)
+async def get_feedback_stats():
+    """Get feedback statistics"""
+    return feedback_handler.get_feedback_stats()
+
+@app.delete("/feedback/history")
+async def clear_feedback_history():
+    """Clear all feedback history"""
+    return feedback_handler.clear_feedback_history()
+
+@app.post("/chat/enhanced", response_model=EnhancedChatResponse)
+async def enhanced_chat(request: QueryRequest):
+    """Chat with feedback learning applied"""
+    return await enhanced_chat_handler.handle_enhanced_chat(request)
 
 if __name__ == "__main__":
     import uvicorn

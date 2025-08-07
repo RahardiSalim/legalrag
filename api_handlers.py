@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import List
 from fastapi import HTTPException, status, UploadFile
 from datetime import datetime
+import time
 
 from config import Config
 from models import (
     UploadResponse, ChatResponse, QueryRequest, ChatHistoryResponse,
-    ChunkInfo, HealthResponse, GraphStats, SearchType
+    ChunkInfo, HealthResponse, GraphStats, SearchType, FeedbackRequest,
+    FeedbackResponse, FeedbackStatsResponse, EnhancedChatResponse
 )
 from interfaces import (
     DocumentProcessorInterface, VectorStoreInterface, RAGServiceInterface
@@ -358,3 +360,136 @@ class GraphHandler:
         except Exception as e:
             logger.error(f"Graph visualization endpoint error: {e}")
             raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+class FeedbackHandler:
+    def __init__(self, enhanced_rag_service):
+        self.enhanced_rag_service = enhanced_rag_service
+    
+    async def store_feedback(self, request: FeedbackRequest) -> FeedbackResponse:
+        """Store user feedback"""
+        try:
+            success = self.enhanced_rag_service.store_feedback(
+                query=request.query,
+                response=request.response,
+                relevance_score=request.relevance_score,
+                quality_score=request.quality_score,
+                response_time=request.response_time,
+                search_type=request.search_type,
+                comments=request.comments,
+                user_id=request.user_id
+            )
+            
+            if success:
+                return FeedbackResponse(
+                    success=True,
+                    message="Feedback stored successfully",
+                    feedback_id=f"fb_{int(time.time())}"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to store feedback"
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to store feedback: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error storing feedback: {str(e)}"
+            )
+    
+    def get_feedback_stats(self) -> FeedbackStatsResponse:
+        """Get feedback statistics"""
+        try:
+            stats = self.enhanced_rag_service.get_feedback_stats()
+            return FeedbackStatsResponse(**stats)
+        except Exception as e:
+            logger.error(f"Failed to get feedback stats: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error getting feedback stats: {str(e)}"
+            )
+    
+    def clear_feedback_history(self) -> dict:
+        """Clear feedback history"""
+        try:
+            success = self.enhanced_rag_service.clear_feedback_history()
+            if success:
+                return {"message": "Feedback history cleared successfully"}
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to clear feedback history"
+                )
+        except Exception as e:
+            logger.error(f"Failed to clear feedback history: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error clearing feedback history: {str(e)}"
+            )
+
+class EnhancedChatHandler(ChatHandler):
+    """Enhanced chat handler with feedback learning"""
+    
+    def __init__(self, enhanced_rag_service, app_state):
+        self.enhanced_rag_service = enhanced_rag_service
+        self.app_state = app_state
+    
+    async def handle_enhanced_chat(self, request: QueryRequest) -> EnhancedChatResponse:
+        """Handle chat with feedback learning"""
+        if not self.app_state.system_initialized:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="System not initialized. Please upload documents first."
+            )
+        
+        if request.search_type == SearchType.GRAPH and not self.app_state.graph_initialized:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Graph search requested but no graph data available."
+            )
+        
+        try:
+            self.app_state.add_user_message(request.question)
+            
+            # Use enhanced query with feedback learning
+            result = self.enhanced_rag_service.query_with_feedback_learning(
+                question=request.question,
+                search_type=request.search_type.value,
+                use_enhanced_query=request.use_enhanced_query,
+                chat_history=self.app_state.chat_history
+            )
+            
+            self.app_state.add_assistant_message(result["answer"])
+            
+            logger.info(f"Enhanced query processed in {result.get('processing_time', 0):.2f}s "
+                       f"with {result.get('feedback_entries_used', 0)} feedback entries")
+            
+            return EnhancedChatResponse(
+                answer=result["answer"],
+                source_documents=result["source_documents"],
+                generated_question=result.get("generated_question"),
+                enhanced_query=request.use_enhanced_query,
+                processing_time=result.get("processing_time"),
+                tokens_used=result.get("tokens_used"),
+                search_type_used=result.get("search_type_used", SearchType.VECTOR),
+                graph_entities=result.get("graph_entities", []),
+                graph_relationships=result.get("graph_relationships", []),
+                feedback_learning_applied=result.get("feedback_learning_applied", False),
+                feedback_entries_used=result.get("feedback_entries_used", 0),
+                documents_learned=result.get("documents_learned", 0),
+                query_with_feedback_time=result.get("query_with_feedback_time")
+            )
+            
+        except ServiceException as e:
+            logger.error(f"Service error during enhanced chat: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during enhanced chat: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error processing query: {str(e)}"
+            )
