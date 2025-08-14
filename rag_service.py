@@ -249,7 +249,8 @@ class RAGService(RAGServiceInterface):
     def _query_vector(self, question: str, use_enhanced_query: bool, chat_history: List, start_time: float) -> Dict[str, Any]:
         processed_question = self._get_processed_question(question, use_enhanced_query, chat_history)
         
-        result = self.chain({"question": processed_question})
+        # Use invoke instead of deprecated __call__
+        result = self.chain.invoke({"question": processed_question})
         self.last_retrieved_chunks = result.get("source_documents", [])
 
         if self.last_retrieved_chunks:

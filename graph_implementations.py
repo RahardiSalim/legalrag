@@ -6,7 +6,7 @@ import numpy as np
 from typing import List, Dict, Any, Optional, Set, Tuple
 from pathlib import Path
 import time
-import google.generativeai as genai
+from langchain_community.chat_models import ChatOllama
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -29,27 +29,27 @@ logger = logging.getLogger(__name__)
 
 
 class SentenceTransformerEmbedding(EmbeddingService):
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
+    def __init__(self, model_path: str):
+        # Use local model path instead of downloading from HuggingFace
+        self.model = SentenceTransformer(model_path, trust_remote_code=True)
     
     def encode(self, texts: List[str]) -> List[List[float]]:
         return self.model.encode(texts).tolist()
 
 
-class GeminiChat(BaseChatModel):
-    model_name: str = Field(default="gemini-pro")
-    api_key: Optional[str] = Field(default=None)
+class OllamaChat(BaseChatModel):
+    model_name: str = Field(default="deepseek-r1:latest")
+    base_url: str = Field(default="http://localhost:11434")
     _model: Any = PrivateAttr(default=None)
     
-    def __init__(self, model_name: str = "gemini-pro", api_key: Optional[str] = None, **kwargs):
-        super().__init__(model_name=model_name, api_key=api_key, **kwargs)
-        
-        actual_api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        if not actual_api_key:
-            raise ValueError("GEMINI_API_KEY must be provided")
-            
-        genai.configure(api_key=actual_api_key)
-        self._model = genai.GenerativeModel(model_name)
+    def __init__(self, model_name: str = "deepseek-r1:latest", base_url: str = "http://localhost:11434", **kwargs):
+        super().__init__(model_name=model_name, base_url=base_url, **kwargs)
+        self._model = ChatOllama(
+            model=model_name,
+            base_url=base_url,
+            temperature=0.1,
+            num_ctx=4096
+        )
     
     @property
     def model(self):
@@ -57,16 +57,19 @@ class GeminiChat(BaseChatModel):
 
     def invoke(self, input_data, config=None, **kwargs):
         prompt = self._extract_prompt(input_data)
-        response = self.model.generate_content(prompt)
-        return AIMessage(content=response.text)
+        response = self.model.invoke(prompt)
+        return response
 
     def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, 
                   run_manager: Optional[Any] = None, **kwargs: Any) -> ChatResult:
         prompt = self._extract_prompt_from_messages(messages)
         
         try:
-            response = self.model.generate_content(prompt)
-            message = AIMessage(content=response.text)
+            response = self.model.invoke(prompt)
+            if hasattr(response, 'content'):
+                message = AIMessage(content=response.content)
+            else:
+                message = AIMessage(content=str(response))
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
         except Exception as e:
@@ -91,11 +94,11 @@ class GeminiChat(BaseChatModel):
 
     @property
     def _llm_type(self) -> str:
-        return "gemini-chat"
+        return "ollama-chat"
 
     @property
     def _identifying_params(self) -> dict:
-        return {"model_name": self.model_name}
+        return {"model_name": self.model_name, "base_url": self.base_url}
 
     class Config:
         arbitrary_types_allowed = True
@@ -498,9 +501,9 @@ class SemanticGraphService(GraphService):
         self.graph_data = None
         self.embeddings = {}
         
-        self.llm = GeminiChat(config.GRAPH_LLM_MODEL, config.GEMINI_API_KEY)
+        self.llm = OllamaChat(config.GRAPH_LLM_MODEL, config.OLLAMA_BASE_URL)
         self.transformer = LangChainGraphTransformer(self.llm)
-        self.embedding_service = SentenceTransformerEmbedding()
+        self.embedding_service = SentenceTransformerEmbedding(config.EMBEDDING_MODEL)  # Use local model path
         self.storage = FileGraphStorage(config.GRAPH_STORE_DIRECTORY)
         self.visualizer = PyvisGraphVisualizer(config.GRAPH_STORE_DIRECTORY)
         self.searcher = SemanticGraphSearcher(self.embedding_service)
@@ -584,10 +587,36 @@ class SemanticGraphService(GraphService):
             "embedding_coverage": len(self.embeddings) / len(self.graph_data.nodes) if self.graph_data.nodes else 0
         }
     
+    # ADDED MISSING METHODS
+    def load_graph_data(self) -> bool:
+        """Load existing graph data from storage"""
+        try:
+            self.graph_data, self.embeddings = self.storage.load()
+            return self.has_data()
+        except Exception as e:
+            logger.error(f"Failed to load graph data: {e}")
+            return False
+    
+    def process_documents_to_graph(self, documents: List[Document]) -> bool:
+        """Process documents and create graph data"""
+        return self.process_documents(documents)
+    
+    def update_graph_with_documents(self, documents: List[Document]) -> bool:
+        """Update existing graph with new documents"""
+        return self.update_with_documents(documents)
+    
+    def has_graph_data(self) -> bool:
+        """Check if graph data exists"""
+        return self.has_data()
+    
     def _load_existing_data(self) -> None:
-        self.graph_data, self.embeddings = self.storage.load()
-        if self.graph_data:
-            logger.info("Loaded existing graph data")
+        """Load existing data during initialization"""
+        try:
+            self.graph_data, self.embeddings = self.storage.load()
+            if self.graph_data:
+                logger.info("Loaded existing graph data during initialization")
+        except Exception as e:
+            logger.warning(f"No existing graph data found or failed to load: {e}")
     
     def _generate_embeddings(self) -> None:
         if not self.graph_data:

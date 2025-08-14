@@ -2,10 +2,10 @@ import logging
 from typing import List, Any
 from pathlib import Path
 from langchain.schema import Document
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores.utils import filter_complex_metadata
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
-from langchain.retrievers import ContextualCompressionRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
 
 from config import Config
 from interfaces import VectorStoreInterface, ModelManagerInterface
@@ -146,17 +146,43 @@ class VectorStoreManager(VectorStoreInterface):
                 weights=[self.config.VECTOR_WEIGHT, self.config.BM25_WEIGHT]
             )
 
-            reranker = CustomReranker(
-                model_name=self.config.RERANKER_MODEL,
-                top_n=self.config.RERANK_K
-            )
+            # Try to use Qwen reranker first, fallback to others if needed
+            logger.info(f"Setting up reranker with model: {self.config.RERANKER_MODEL}")
+            
+            try:
+                from reranker import QwenCustomReranker
+                reranker = QwenCustomReranker(
+                    model_path=self.config.RERANKER_MODEL,
+                    top_n=self.config.RERANK_K,
+                    device="cpu"
+                )
+                logger.info("Using Qwen reranker")
+            except Exception as qwen_error:
+                logger.warning(f"Qwen reranker failed: {qwen_error}")
+                logger.info("Falling back to sentence-transformers reranker")
+                
+                try:
+                    from reranker import FallbackReranker
+                    reranker = FallbackReranker(
+                        model_name="cross-encoder/ms-marco-MiniLM-L-12-v2",
+                        top_n=self.config.RERANK_K
+                    )
+                    logger.info("Using fallback CrossEncoder reranker")
+                except Exception as fallback_error:
+                    logger.error(f"All rerankers failed: {fallback_error}")
+                    # Use a basic reranker that just returns top documents
+                    from reranker import CustomReranker
+                    reranker = CustomReranker(
+                        model_name="cross-encoder/ms-marco-MiniLM-L-12-v2",
+                        top_n=self.config.RERANK_K
+                    )
             
             self.hybrid_retriever = ContextualCompressionRetriever(
                 base_compressor=reranker,
                 base_retriever=ensemble_retriever
             )
             
-            logger.info("Hybrid retriever setup complete")
+            logger.info("Hybrid retriever setup complete with reranker")
             
         except Exception as e:
             logger.error(f"Failed to setup hybrid retriever: {e}")

@@ -1,3 +1,15 @@
+import os 
+
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGCHAIN_ENDPOINT"] = ""
+os.environ["LANGCHAIN_API_KEY"] = ""
+os.environ["LANGCHAIN_PROJECT"] = ""
+os.environ["POSTHOG_HOST"] = ""
+os.environ["POSTHOG_PROJECT_API_KEY"] = ""
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse

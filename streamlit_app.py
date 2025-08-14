@@ -107,7 +107,7 @@ st.markdown("""
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
-REQUEST_TIMEOUT = 300
+REQUEST_TIMEOUT = 600
 MAX_RETRIES = 3
 
 # Initialize session state

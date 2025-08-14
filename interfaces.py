@@ -1,23 +1,23 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from langchain.schema import Document
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from sentence_transformers import CrossEncoder
+from langchain_community.chat_models import ChatOllama
+from langchain.embeddings.base import Embeddings
 
 from graph_interfaces import GraphService, GraphSearchResult
 
 
 class ModelManagerInterface(ABC):
     @abstractmethod
-    def get_llm(self) -> ChatGoogleGenerativeAI:
+    def get_llm(self) -> ChatOllama:
         pass
     
     @abstractmethod
-    def get_embeddings(self) -> GoogleGenerativeAIEmbeddings:
+    def get_embeddings(self) -> Embeddings:
         pass
     
     @abstractmethod
-    def get_reranker(self) -> CrossEncoder:
+    def get_reranker(self) -> Any:  # Changed to Any to support both QwenReranker and CrossEncoder
         pass
 
 

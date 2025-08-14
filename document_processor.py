@@ -5,7 +5,7 @@ import re
 from typing import List
 from pathlib import Path
 from langchain.schema import Document
-from langchain.document_loaders import PyPDFLoader, TextLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from config import Config

@@ -5,5 +5,8 @@ __pycache__/
 
 data/
 lib/
+qwen-reranker/
+qwen-embedding/
 
 *.log
+
