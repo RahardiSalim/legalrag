@@ -115,17 +115,19 @@ class ModelManager(ModelManagerInterface):
                 top_p=0.9,
             )
 
-            # Test connection
-            try:
-                test_response = llm.invoke("Test connection")
-                logger.info(f"Ollama LLM connection successful: {self.config.LLM_MODEL}")
-            except Exception as e:
-                logger.warning(f"Ollama LLM test failed: {e}")
+            # Skip test if in offline mode
+            if not self.config.OFFLINE_MODE:
+                try:
+                    test_response = llm.invoke("Test connection")
+                    logger.info(f"Ollama LLM connection successful: {self.config.LLM_MODEL}")
+                except Exception as e:
+                    logger.warning(f"Ollama LLM test failed: {e}")
 
             return llm
         except Exception as e:
             logger.error(f"Failed to initialize Ollama LLM: {e}")
             raise ModelInitializationException(f"Failed to initialize Ollama LLM: {e}", e)
+
 
     def _create_embeddings(self) -> QwenEmbeddings:
         try:

@@ -1,14 +1,30 @@
+# DISABLE ALL ANALYTICS FIRST - BEFORE ANY IMPORTS
 import os 
 
+# LangChain analytics
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 os.environ["LANGCHAIN_ENDPOINT"] = ""
 os.environ["LANGCHAIN_API_KEY"] = ""
 os.environ["LANGCHAIN_PROJECT"] = ""
+
+# PostHog analytics
 os.environ["POSTHOG_HOST"] = ""
 os.environ["POSTHOG_PROJECT_API_KEY"] = ""
+os.environ["POSTHOG_DISABLED"] = "true"
+os.environ["POSTHOG_CAPTURE"] = "false"
+
+# LangSmith
 os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGSMITH_API_KEY"] = ""
+
+# Additional analytics
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
+os.environ["ANONYMIZED_TELEMETRY"] = "false"
+os.environ["DO_NOT_TRACK"] = "1"
+os.environ["TELEMETRY_DISABLED"] = "true"
+
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware

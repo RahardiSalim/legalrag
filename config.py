@@ -11,18 +11,28 @@ from exceptions import ConfigurationException
 # Set Hugging Face cache directory
 os.environ["HF_HOME"] = "D:/HF_model"
 
-# Disable LangChain telemetry/analytics
+# Disable LangChain telemetry/analytics - FIXED
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 os.environ["LANGCHAIN_ENDPOINT"] = ""
 os.environ["LANGCHAIN_API_KEY"] = ""
 os.environ["LANGCHAIN_PROJECT"] = ""
 
-# Disable PostHog analytics
+# Disable PostHog analytics - FIXED
 os.environ["POSTHOG_HOST"] = ""
 os.environ["POSTHOG_PROJECT_API_KEY"] = ""
+# ADD THESE CRITICAL MISSING VARIABLES:
+os.environ["POSTHOG_DISABLED"] = "true"
+os.environ["POSTHOG_CAPTURE"] = "false"
 
 # Disable LangSmith
 os.environ["LANGSMITH_TRACING"] = "false"
+
+# Additional analytics disabling - ADD THESE:
+os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
+os.environ["ANONYMIZED_TELEMETRY"] = "false"
+os.environ["LANGCHAIN_CALLBACKS_MANAGER"] = ""
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"
 
 @dataclass
 class Config:
@@ -39,6 +49,17 @@ class Config:
     ENABLE_GRAPH_PROCESSING: bool = True
     GRAPH_STORE_DIRECTORY: str = 'data/graphstore'
     LLM_TEMPERATURE: float = 0.4
+
+    def _is_ollama_reachable() -> bool:
+        try:
+            response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=2)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    OFFLINE_MODE = not _is_ollama_reachable()
+
+
 
     # Document Processing
     CHUNK_SIZE: int = 1000
@@ -63,9 +84,40 @@ class Config:
     
     def __post_init__(self):
         """Initialize computed fields and validate configuration"""
+        self._disable_all_analytics()  # ADD THIS METHOD CALL
         self._ensure_directories_exist()
         self._validate_ollama_connection()
         self._validate_local_models()
+    
+    def _disable_all_analytics(self):
+        """Completely disable all analytics and telemetry"""
+        # PostHog
+        os.environ["POSTHOG_DISABLED"] = "true"
+        os.environ["POSTHOG_CAPTURE"] = "false"
+        os.environ["POSTHOG_HOST"] = ""
+        os.environ["POSTHOG_PROJECT_API_KEY"] = ""
+        
+        # LangChain
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
+        os.environ["LANGCHAIN_ENDPOINT"] = ""
+        os.environ["LANGCHAIN_API_KEY"] = ""
+        os.environ["LANGCHAIN_PROJECT"] = ""
+        
+        # LangSmith
+        os.environ["LANGSMITH_TRACING"] = "false"
+        os.environ["LANGSMITH_API_KEY"] = ""
+        
+        # Chroma
+        os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
+        os.environ["ANONYMIZED_TELEMETRY"] = "false"
+        
+        # Transformers
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        
+        # General analytics
+        os.environ["DO_NOT_TRACK"] = "1"
+        os.environ["TELEMETRY_DISABLED"] = "true"
     
     def _ensure_directories_exist(self):
         directories = [

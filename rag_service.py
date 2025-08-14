@@ -5,6 +5,8 @@ from pathlib import Path
 from datetime import datetime
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
+from langchain.memory import ChatMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
 
@@ -162,13 +164,20 @@ class RAGService(RAGServiceInterface):
         if self.graph_service:
             vector_store_manager.graph_service = self.graph_service
 
+
     def setup_chain(self) -> None:
         try:
+
+            # Create a simple in-memory chat history
+            self.chat_history = ChatMessageHistory()
+            
+            # Use the simpler memory approach
             self.memory = ConversationBufferWindowMemory(
                 memory_key="chat_history",
                 return_messages=True,
                 output_key="answer",
-                k=5 
+                k=5,
+                chat_memory=self.chat_history  # Add this parameter
             )
             
             qa_prompt = PromptTemplate(
@@ -183,7 +192,7 @@ class RAGService(RAGServiceInterface):
                 return_source_documents=True,
                 return_generated_question=True,
                 combine_docs_chain_kwargs={"prompt": qa_prompt},
-                verbose=True
+                verbose=False  # Set to False to reduce logs
             )
             
             if self.graph_service:
@@ -194,7 +203,7 @@ class RAGService(RAGServiceInterface):
         except Exception as e:
             logger.error(f"Failed to setup RAG chain: {e}")
             raise RAGException(f"Failed to setup RAG chain: {e}", e)
-    
+        
     def query(self, question: str, search_type: SearchType = SearchType.VECTOR, 
               use_enhanced_query: bool = False, chat_history: List = None) -> Dict[str, Any]:
         if not self.chain:

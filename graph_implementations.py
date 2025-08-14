@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 from pathlib import Path
 import time
 from langchain_community.chat_models import ChatOllama
+from langchain_community.llms import Ollama 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -42,14 +43,14 @@ class OllamaChat(BaseChatModel):
     base_url: str = Field(default="http://localhost:11434")
     _model: Any = PrivateAttr(default=None)
     
-    def __init__(self, model_name: str = "deepseek-r1:latest", base_url: str = "http://localhost:11434", **kwargs):
-        super().__init__(model_name=model_name, base_url=base_url, **kwargs)
-        self._model = ChatOllama(
-            model=model_name,
-            base_url=base_url,
-            temperature=0.1,
-            num_ctx=4096
-        )
+    def get_llm(self) -> Ollama:
+        if self._llm is None:
+            self._llm = Ollama(
+                model="deepseek-r1:latest",
+                base_url="http://localhost:11434",
+                temperature=0.1,
+            )
+        return self._llm
     
     @property
     def model(self):
