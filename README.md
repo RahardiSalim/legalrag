@@ -283,4 +283,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **⚖️ Built for Indonesian Legal Professionals | 🏛️ Empowering Financial Compliance**
 
-*© 2024 Rahardi Salim - Advanced Legal Document Intelligence*
+*© 2025 Rahardi Salim - Advanced Legal Document Intelligence*

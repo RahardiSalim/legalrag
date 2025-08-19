@@ -159,3 +159,39 @@ class ErrorResponse(BaseModel):
     detail: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.now)
     request_id: Optional[str] = None
+
+
+class FeedbackRequest(BaseModel):
+    query: str
+    response: str
+    relevance_score: int = Field(..., ge=1, le=5, description="Relevance score from 1-5")
+    quality_score: int = Field(..., ge=1, le=5, description="Quality score from 1-5")
+    search_type: Optional[str] = None
+    response_time: Optional[float] = None
+    comments: Optional[str] = Field(None, max_length=1000)
+    user_id: Optional[str] = None
+    
+    @validator('query', 'response')
+    def not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field cannot be empty')
+        return v.strip()
+
+class FeedbackResponse(BaseModel):
+    success: bool
+    message: str
+    feedback_id: Optional[str] = None
+
+class FeedbackStatsResponse(BaseModel):
+    total_feedback: int
+    average_relevance: float
+    average_quality: float
+    search_type_distribution: Dict[str, int] = Field(default_factory=dict)
+    feedback_learning_enabled: bool = True
+
+class EnhancedChatResponse(ChatResponse):
+    """Extended ChatResponse with feedback learning information"""
+    feedback_learning_applied: bool = False
+    feedback_entries_used: int = 0
+    documents_learned: int = 0
+    query_with_feedback_time: Optional[float] = None

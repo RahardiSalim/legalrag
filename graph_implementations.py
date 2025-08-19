@@ -43,15 +43,19 @@ class OllamaChat(BaseChatModel):
     base_url: str = Field(default="http://localhost:11434")
     _model: Any = PrivateAttr(default=None)
     
-    def get_llm(self) -> Ollama:
-        if self._llm is None:
-            self._llm = Ollama(
-                model="deepseek-r1:latest",
-                base_url="http://localhost:11434",
-                temperature=0.1,
-            )
-        return self._llm
-    
+    def __init__(self, model_name: str = "deepseek-r1:latest", base_url: str = "http://localhost:11434", **kwargs):
+        super().__init__(model_name=model_name, base_url=base_url, **kwargs)
+        self._model = ChatOllama(
+            model=model_name,
+            base_url=base_url,
+            temperature=0.0,
+            enable_thinking=False,
+            # Remove think=False - not supported by all models
+            num_ctx=8192,  # Increase context window
+            top_p=0.9,
+            top_k=40
+        )
+            
     @property
     def model(self):
         return self._model
@@ -110,21 +114,63 @@ class LangChainGraphTransformer(GraphTransformer):
         self.transformer = LLMGraphTransformer(llm=llm)
     
     def transform_documents(self, documents: List[Document]) -> GraphData:
+
+        logger.info(f"Starting graph transformation for {len(documents)} documents")
         combined_content = self._combine_document_contents(documents)
-        combined_doc = Document(page_content=combined_content)
+
+        logger.info(f"Combined content length: {len(combined_content)} characters")
         
-        graph_documents = self.transformer.convert_to_graph_documents([combined_doc])
+        # Add explicit graph extraction prompt
+        graph_prompt = f"""/no_think
+            Extract entities and relationships from the following legal documents.
+            Focus on:
+            - Legal entities (organizations, laws, regulations, articles, sections)
+            - Relationships between them (REGULATES, APPLIES_TO, REFERENCES, etc.)
+            
+            Document content:
+            {combined_content}
+            
+            Please extract clear entities and their relationships in a structured format.
+        """
         
-        if not graph_documents or not graph_documents[0].nodes:
+        combined_doc = Document(page_content=graph_prompt)
+        
+        try:
+            logger.info("Calling LLMGraphTransformer...")
+            graph_documents = self.transformer.convert_to_graph_documents([combined_doc])
+            logger.info(f"Transformer returned: {len(graph_documents)} graph documents")
+
+            if graph_documents and len(graph_documents) > 0:
+                logger.info(f"First document has {len(graph_documents[0].nodes)} nodes")
+            
+            if not graph_documents or not graph_documents[0].nodes:
+                logger.warning("No graph data extracted from documents")
+                return GraphData()
+            
+            return self._convert_to_graph_data(graph_documents[0])
+        except Exception as e:
+            logger.error(f"Graph transformation failed: {e}")
             return GraphData()
-        
-        return self._convert_to_graph_data(graph_documents[0])
     
     def _combine_document_contents(self, documents: List[Document]) -> str:
+        # Process only first 5 documents to avoid context overflow
+        max_docs = min(5, len(documents))
+        max_content_length = 6000
+        
         combined_parts = []
-        for i, doc in enumerate(documents):
+        total_length = 0
+        
+        for i, doc in enumerate(documents[:max_docs]):
+            # Truncate long documents
+            content = doc.page_content[:1200] if len(doc.page_content) > 1200 else doc.page_content
+            
+            if total_length + len(content) > max_content_length:
+                break
+                
             source = doc.metadata.get('source', f'Document_{i+1}')
-            combined_parts.extend([f"=== {source} ===", doc.page_content, ""])
+            combined_parts.extend([f"=== {source} ===", content, ""])
+            total_length += len(content)
+        
         return "\n".join(combined_parts)
     
     def _convert_to_graph_data(self, graph_doc) -> GraphData:
@@ -518,12 +564,26 @@ class SemanticGraphService(GraphService):
         try:
             logger.info(f"Processing {len(documents)} documents to graph...")
             
-            self.graph_data = self.transformer.transform_documents(documents)
+            # Process documents in smaller batches
+            batch_size = 10
+            all_graph_data = GraphData()
             
-            if not self.graph_data.nodes:
-                logger.warning("No graph data generated from documents")
+            for i in range(0, len(documents), batch_size):
+                batch = documents[i:i + batch_size]
+                logger.info(f"Processing batch {i//batch_size + 1}/{(len(documents) + batch_size - 1)//batch_size}")
+                
+                batch_graph_data = self.transformer.transform_documents(batch)
+                
+                if batch_graph_data.nodes:
+                    # Merge batch results
+                    all_graph_data.nodes.extend(batch_graph_data.nodes)
+                    all_graph_data.relationships.extend(batch_graph_data.relationships)
+            
+            if not all_graph_data.nodes:
+                logger.warning("No graph data generated from any batch")
                 return False
             
+            self.graph_data = all_graph_data
             self._generate_embeddings()
             self.storage.save(self.graph_data, self.embeddings)
             

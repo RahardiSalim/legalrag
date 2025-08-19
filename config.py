@@ -42,8 +42,8 @@ class Config:
     OLLAMA_BASE_URL: str = field(default_factory=lambda: os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434'))
     
     # Model Configuration
-    LLM_MODEL: str = "deepseek-r1:8b"
-    GRAPH_LLM_MODEL: str = "deepseek-r1:8b"
+    LLM_MODEL: str = "qwen3:4b"
+    GRAPH_LLM_MODEL: str = "qwen3:4b"
     EMBEDDING_MODEL: str = "D:/RAG/qwen-embedding" 
     RERANKER_MODEL: str = "D:/RAG/qwen-reranker"
     ENABLE_GRAPH_PROCESSING: bool = True

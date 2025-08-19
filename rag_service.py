@@ -195,8 +195,6 @@ class RAGService(RAGServiceInterface):
                 verbose=False  # Set to False to reduce logs
             )
             
-            if self.graph_service:
-                self.graph_service._load_existing_data()
             
             logger.info("RAG chain setup complete")
             
