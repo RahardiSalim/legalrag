@@ -110,6 +110,7 @@ class ModelManager(ModelManagerInterface):
                 model=self.config.LLM_MODEL,
                 base_url=self.config.OLLAMA_BASE_URL,
                 temperature=self.config.LLM_TEMPERATURE,
+                think=False,
                 repeat_penalty=1.1,
                 top_k=40,
                 top_p=0.9,

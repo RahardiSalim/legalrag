@@ -159,7 +159,8 @@ class Config:
    
     
     # Prompt Templates
-    QA_TEMPLATE: str = """Anda adalah asisten AI yang ahli dalam hukum dan peraturan Otoritas Jasa Keuangan (OJK). 
+    QA_TEMPLATE: str = """/set nothink
+        Anda adalah asisten AI yang ahli dalam hukum dan peraturan Otoritas Jasa Keuangan (OJK). 
         Gunakan konteks yang diberikan untuk menjawab pertanyaan dengan akurat dan komprehensif.
 
         Aturan menjawab:
