@@ -1,0 +1,103 @@
+user_input|retrieved_contexts|response|reference|faithfulness|answer_relevancy|context_recall|context_precision
+[cite_start]Apa kepanjangan dari SLIK?|['dari kulit dan barang-barang sejenis, kecuali bagian alas kaki yang terbuat dari plastik, kayu dan karet. C.16. INDUSTRI KAYU, BARANG DARI KAYU DAN GABUS (TIDAK TERMASUK FURNITUR) DAN BARANG ANYAMAN DARI BAMBU, ROTAN DAN SEJENISNYA Mencakup pembuatan barang -barang dari kayu. Kebanyakan digunakan untuk konstruksi dan juga mencakup berbagai proses pengerjaan dari penggergajian sampai pembentukan dan perakitan barang -barang dari kayu, dan dari perakitan sampai produk jadi seperti kontainer kayu. Terkecuali penggergajian, golongan pokok ini terbagi lagi sebagian besar didasarkan pada produk spesifik yang dihasilkan. Golongan pokok ini tidak mencakup pembuatan mebeler, atau perakitan/pemasangan perabot kayu dan sejenisnya. C.16.1. INDUSTRI PENGGERGAJIAN DAN PENGAWETAN KAYU, ROTAN, BAMBU DAN SEJENISNYA 161000 Mencakup proses pengerjaan dari penggergajian kayu dan batang kayu sampai proses selanjutnya, pembuatan bantalan kayu rel kereta api, bahan kayu untuk lantai yang', 'HURUF f  ANGKA 8 8. Pelapor sebagaimana dimaksud dalam butir II angka 2 dapat mengajukan permohonan pengunduran diri sebagai Pelapor kepada Otoritas Jasa Keuangan, dengan menggunakan format sebagaimana dimaksud pada Lampiran II yang merupakan bagian tidak terpisahkan dari Surat Edaran Otoritas Jasa Keuangan ini. IV. LAPORAN DEBITUR', '- 200 - Sektor Ekonomi Kode Definisi sejenisnya dari bahan lain (kulit imitasi atau kulit tiruan), seperti alas kaki dari bahan karet, koper dari tekstil dan lain-lain. Barang-barang terbuat dari kulit tiruan termasuk di sini, asalkan cara pembuatannya sama dengan produk kulit dibuat (koper), dan biasanya di produksi oleh unit yang sama. C.15.1. INDUSTRI KULIT DAN BARANG DARI KULIT, TERMASUK KULIT BUATAN 151000 Mencakup pembuatan kulit dan kulit berbulu dan barang-barang yang terbuat dari kulit termasuk penyamakan, pencelupan dan pengolahan kulit dan kulit jangat, pembuatan kulit campuran. Golongan ini juga mencakup pembuatan koper, tas tangan dari kulit dan produk sejenis dari kulit atau bahan lainnya. C.15.2. INDUSTRI ALAS KAKI 152000 Mencakup pembuatan alas kaki untuk semua kebutuhan, pembuatan bagian alas kaki dari kulit dan barang-barang sejenis, kecuali bagian alas kaki yang terbuat dari plastik, kayu dan karet. C.16. INDUSTRI KAYU, BARANG DARI KAYU DAN GABUS', 'HURUF b b. menerapkan manajemen risiko kredit atau pembiayaan dan/atau risiko asuransi atau penjaminan;', 'HURUF c c. dibatalkan persetujuannya menjadi Pelapor oleh Otoritas Jasa Keuangan, tidak lagi disajikan pada Informasi Debitur. 2. Permintaan dan Penggunaan Informasi Debitur oleh Pelapor']|"<think>
+Okay, so I need to figure out what ""SLIK"" stands for based on the given context documents. Let me go through each document carefully.
+
+First, looking at the user's question: ""Apa kepanjangan dari SLIK?"" which translates to ""What is the full form of SLIK?""
+
+The context provided includes five documents from OJK (Otoritas Jasa Keuangan) with specific sections and content. Let me check each document for mentions of SLIK.
+
+Starting with Document 1: The content talks about industrial categories like wood, bamboo, etc., but I don't see any mention of SLIK here. The section is about C.16 (Wood industry), so probably not relevant.
+
+Document 2: This is about reporting debtors and the process for withdrawing as a reporter. The content mentions ""Pelapor"" which is Indonesian for ""reporter"", but no SLIK here either.
+
+Document 3: Similar to Document 1, it's about leather and footwear industries. There's mention of C.15.2 (Footwear industry) but again, no SLIK.
+
+Document 4: Talks about risk management in credit or insurance. The content is under ""HURUF b"" which refers to applying risk management. Not related to SLIK.
+
+Document 5: Mentions that a reporter's approval can be revoked by OJK and not presented in the debtor information. Also, it's part of ""Permintaan dan Penggunaan Informasi Debitur oleh Pelapor"". Still no SLIK here.
+
+Wait, maybe I need to check if SLIK is an acronym used within these documents. Let me re-read each document's content.
+
+In Document 5: The section says ""c. dibatalkan persetujuannya menjadi Pelapor oleh Otoritas Jasa Keuangan, tidak lagi disajikan pada Informasi Debitur."" So this is about revoking a reporter's approval. But SLIK isn't mentioned here.
+
+Hmm. Maybe the user expects me to know that in Indonesian regulatory terms, SLIK stands for something specific. Wait, but according to the instructions, I must use only the provided context documents. If the context doesn't mention it, then I have to say I don't have enough info.
+
+Wait, let me check again all the documents. The user's question is about ""SLIK"" which in Indonesian legal terms might be an acronym. For example, SLIK could stand for ""Surat Laporan Informasi Kredit"" or something similar? But according to the given context, none of the documents mention SLIK.
+
+Wait, looking at Document 2: It says ""Pelapor sebagaimana dimaksud dalam butir II angka 2 dapat mengajukan permohonan pengunduran diri sebagai Pelapor..."" which translates to ""The reporter as referred in point II number 2 can apply for resignation as a reporter..."". The term ""Pelapor"" here is used, but SLIK isn't there.
+
+In Document 5: There's mention of ""Informasi Debitur"" (debtor information) and ""Pelapor"" (reporter). Maybe SLIK relates to this? But the acronym SLIK isn't present in any of the documents.
+
+Wait, perhaps the user made a typo or it's a specific term that's not covered here. Since all the provided documents don't mention SLIK at all, according to the rules, I should say ""Maaf, saya tidak memiliki informasi yang cukup untuk menjawab pertanyaan tersebut berdasarkan dokumen yang tersedia.""
+
+But let me think again. In Indonesian financial regulations, sometimes acronyms are used. For example, SLIK might stand for ""Sistem Laporan Informasi Kredit"" but I'm not sure. However, the problem states to use only the provided context documents. Since none of the documents mention SLIK, I can't assume external knowledge.
+
+The instructions say: ""Jika tidak mengetahui jawabannya, katakan 'Maaf, saya tidak memiliki informasi yang cukup untuk menjawab pertanyaan tersebut berdasarkan dokumen yang tersedia.'""
+
+So in this case, since the context documents don't have any mention of SLIK, I should respond with that message.
+
+Wait, but let me check once more. The user provided five documents. Let's see:
+
+Document 1: Page 220, about wood industry (C.16)
+Document 2: Page 4, about reporting debtors
+Document 3: Page 220, leather and footwear
+Document 4: Page 27, risk management
+Document 5: Page 8, reporter approval revocation
+
+None of these mention SLIK. So the answer is that there's no information in the provided documents.
+
+Therefore, the correct response is to state that I don't have enough info based on the available docs.
+</think>
+
+Maaf, saya tidak memiliki informasi yang cukup untuk menjawab pertanyaan tersebut berdasarkan dokumen yang tersedia. 
+
+Dalam konteks yang diberikan (SEOJK 11-SEOJK.01-2024 Pelaporan dan Permintaan Informasi), tidak ada referensi atau definisi mengenai singkatan ""SLIK"" dalam semua dokumen yang tersedia (halaman 4, 8, 220, dan 27). Dokumen tersebut berfokus pada klasifikasi industri, prosedur pelaporan debitur, manajemen risiko kredit, serta permohonan pengunduran diri sebagai Pelapor, tetapi tidak menyebutkan singkatan SLIK secara eksplisit. 
+
+Sebagai asisten AI yang mematuhi aturan berdasarkan dokumen yang tersedia, saya tidak dapat mengonfirmasi kepanjangan SLIK tanpa sumber informasi tambahan dari dokumen atau peraturan lain yang relevan."|SLIK adalah Sistem Layanan Informasi Keuangan yang dikelola oleh Otoritas Jasa Keuangan. [cite: 17]|0.3157894736842105|0.0|0.0|0.0
+[cite_start]Untuk apa SLIK dimanfaatkan?|['- 4 - Kategori Volume Data Volume Data (Raw Data) Volume Data File Kirim Jenis Koneksi Kecepatan Upload - Uplink (Mbps) Volume Data Kecil 0-50 MB 0-5 MB Internet Non-VPN 2 50 MB-500 MB 5 MB50 MB Internet Non-VPN 4 Volume Data Medium I 500 MB-1GB 50 MB100 MB Internet Non-VPN, Leased Line 8 1 GB-5 GB 100 MB500 MB Internet Non-VPN, Leased Line 16 Volume Data Medium II 5 GB-10 GB 500 MB1 GB Internet Non-VPN, Leased Line 32 10 GB-20 GB 1 GB2 GB Internet Non-VPN, Leased Line 48 Volume Data Besar 20 GB40 GB 2 GB4 GB Internet Non- VPN, Leased Line 64 40 GB-80 GB 4 GB8 GB Internet Non-VPN, Leased Line 128  80 GB  8 GB Internet Non-VPN, Leased Line 128 b. Kebutuhan Koneksi Leased Line Ekstranet 1) Jaringan komunikasi data leased line ekstranet antara Otoritas Jasa Keuangan dengan Pelapor menggunakan jaringan tertutup melalui penyedia (provider) yang tersedia di', '- 17 - c. Contoh pengisian data: No. Pendidikan Pengisian 1. Pendidikan Debitur S-1 04 2. Pendidikan Debitur SMP/setingkat 00 3. Pendidikan Debitur SMA/setingkat 00 8. Jenis Kelamin a. Kolom ini diisi L untuk Debitur laki-laki dan diisi P untuk Debitur perempuan serta sesuai dengan yang tercantum dalam dokumen identitas Debitur. b. Kolom ini bersifat mandatory (tidak dapat dikosongkan). c. Contoh pengisian data: No. Jenis Kelamin Pengisian 1. Laki-laki L 2. Perempuan P 9. Tempat Lahir a. Kolom ini diisi dengan tempat kelahiran Debitur sesuai dengan tempat kelahiran yang tercantum dalam dokumen identitas Debitur. b. Kolom ini bersifat mandatory (tidak dapat dikosongkan). c. Contoh pengisian data: No. Tempat Lahir Pengisian 1. Debitur lahir di kota Magelang Magelang 2. Debitur lahir di kabupaten Demak Demak 3. Debitur lahir di kota New York New York 10. Tanggal Lahir a. Kolom ini diisi dengan tanggal kelahiran Debitur sesuai dengan', '- 47 - d. Format penulisan adalah 4 (empat) digit tahun, 2 (dua) digit bulan, dan 2 (dua) digit tanggal (yyyymmdd) secara b erurutan tanpa karakter pemisah. e. Kolom ini bersifat mandatory (tidak dapat dikosongkan). f. Contoh pengisian data: No. Tanggal Mulai Pengisian 1. 7 Juni 2023 20230607 2. 18 Desember 2024 20241218 14. Tanggal Jatuh Tempo a. Kolom ini diisi dengan tanggal jatuh tempo atau berakhirnya jangka waktu kredit atau pembiayaan. b. Untuk kredit atau pembiayaan dengan perpanjangan, kolom ini diisi dengan tanggal jatuh tempo fasilitas kredit atau pembiayaan. c. Untuk transaksi dengan pola penggabungan pelaporan, kolom ini diisi dengan tanggal jatuh tempo paling lama. d. Format penulisan adalah 4 (empat) digit tahun, 2 (dua) digit bulan, dan 2 (dua) digit tanggal (yyyymmdd) secara b erurutan tanpa karakter pemisah. e. Kolom ini bersifat mandatory (tidak dapat dikosongkan). f. Contoh pengisian data: No. Tanggal Jatuh Tempo Pengisian', '- 210 - Sektor Ekonomi Kode Definisi dapat mencemari lingkungan. Hasil dari proses pengolahan limbah/sampah dapat dibuang atau menjadi input dalam proses produksi lainnya. E.39. AKTIVITAS REMEDIASI DAN PENGELOLAAN SAMPAH LAINNYA 390000 Mencakup kegiatan pemulihan atau penghilangan bahan berbahaya/beracun yang mencemari tanah, air baik bawah tanah maupun permukaan, tempat/lokasi atau gedung atau pabrik, termasuk lokasi atau pabrik nuklir, tumpahan minyak, polusi akibat suatu kejadian tiba -tiba dan polusi lainnya dalam lingkungan, pembersih an bahan beracun, dan kegiatan lain yang khususnya berkaitan dengan pengawasan polusi. F. KONSTRUKSI F00000 Mencakup kegiatan ekonomi/lapangan usaha di bidang konstruksi, yaitu kegiatan konstruksi umum dan konstruksi khusus pekerjaan bangunan gedung dan bangunan sipil. Kegiatan konstruksi mencakup pekerjaan baru, perbaikan, penambahan dan perubahan, pendirian ba ngunan atau struktur prafabrikasi di lokasi proyek dan juga', '- 231 - Sektor Ekonomi Kode Definisi dan rumah sakit korban kekerasan, rumah sakit khusus penyakit infeksi, rumah sakit bersalin, sanatorium). Kegiatan tersebut disediakan untuk pasien dan dikendalikan dibawah pengawasan langsung dokter medis, mencakup: - Jasa tenaga medis dan paramedic. - Jasa fasilitas laboratorium dan fasilitas teknis termasuk radiologi dan anestesi. - Instalasi gawat darurat. - Jasa penyediaan ruang operasi, apotik, makanan dan jasa rumah sakit lainnya. - Jasa pusat keluarga berencana yang menyediakan perawatan medis seperti sterilisasi dan penghentian kehamilan dengan akomodasi. Q.86.2. AKTIVITAS PRAKTIK DOKTER DAN DOKTER GIGI 862000 Mencakup: - Kegiatan konsultasi kesehatan dan perawatan baik dengan obat-obatan umum maupun khusus oleh dokter umum dan dokter spesialis serta ahli bedah. - Kegiatan praktik kesehatan gigi baik umum maupun khusus seperti dokter gigi, endodontik, dokter gigi anak dan patologi mulut. - Jasa Ortodontik.']|"<think>
+Okay, let's tackle this question. The user is asking ""Untuk apa SLIK dimanfaatkan?"" which translates to ""What is SLIK used for?""
+
+First, I need to recall what SLIK stands for in the context of OJK regulations. From my knowledge, SLIK (Sistem Laporan Informasi Kredit) is a system used by financial institutions in Indonesia for credit reporting and compliance with OJK regulations.
+
+Looking at the provided documents, let me check each document to see if they mention SLIK.
+
+Starting with Dokumen 1: It's about data volume and connection types. The content talks about internet non-VPN, leased lines, etc. Doesn't seem to mention SLIK here.
+
+Dokumen 2: This is about example data filling for reporting forms. Sections like education level, gender, place of birth, date of birth. No mention of SLIK.
+
+Dokumen 3: Talks about date formats (yyyymmdd) and mandatory fields for start and due dates. Not related to SLIK.
+
+Dokumen 4: Discusses economic sectors like waste management and construction. Doesn't mention SLIK.
+
+Dokumen 5: Covers health sector activities, medical services, dental practices. Also no SLIK reference.
+
+Hmm, none of the provided documents explicitly mention SLIK. The user is asking about what SLIK is used for, but in the given context, there's no information on SLIK. 
+
+Wait, maybe I should check if there's a standard OJK regulation that defines SLIK. But according to the instructions, I have to use only the provided documents. Since all five documents don't mention SLIK, then according to rule 1: If not knowing the answer based on available docs, say ""Maaf...""
+
+But wait, maybe in Indonesian context, SLIK is a known term. Let me think. In Indonesia's financial sector, SLIK (Sistem Laporan Informasi Kredit) is part of OJK's requirements for credit reporting. However, since the user provided specific documents that don't mention it, I can't reference external knowledge.
+
+The problem states: ""Gunakan konteks yang diberikan untuk menjawab pertanyaan"" so strictly use the given context. The context here doesn't have any document mentioning SLIK. Therefore, the answer should be that there's insufficient information in the provided documents.
+
+Wait, but let me double-check each document again. Maybe I missed something.
+
+Dokumen 1: Page 24, talks about data volume and connection types for reporting. The title is ""Pelaporan dan Permintaan Informasi..."" so it's about reporting procedures. But SLIK isn't mentioned here.
+
+Dokumen 2: Example data filling for reports. Still no SLIK.
+
+Dokumen 3: Date formats, mandatory fields. No.
+
+Dokumen 4 and 5: Economic sectors, not related.
+
+So none of the provided documents mention SLIK. Therefore, according to rule 1, I have to say that there's insufficient information based on the available docs.
+
+But wait, maybe the user expects me to know that in OJK regulations, SLIK is used for credit reporting. However, the instruction says: ""Jika tidak mengetahui jawabannya, katakan 'Maaf, saya tidak memiliki informasi yang cukup untuk menjawab pertanyaan tersebut berdasarkan dokumen yang tersedia.'"" So since the documents provided don't mention SLIK, I can't answer based on them.
+
+Therefore, the correct response is that there's insufficient information in the given context.
+</think>
+
+Maaf, saya tidak memiliki informasi yang cukup untuk menjawab pertanyaan tersebut berdasarkan dokumen yang tersedia. 
+
+Dalam konteks yang diberikan (SEOJK 11-SEOJK.01-2024 Pelaporan dan Permintaan Informasi), tidak ada referensi spesifik mengenai SLIK (Sistem Laporan Informasi Kredit) dalam semua dokumen yang tersedia (halaman 24, 37, 67, 230, dan 251). Dokumen tersebut berfokus pada kategori volume data, contoh pengisian informasi pelaporan, format tanggal, serta definisi sektor ekonomi, tetapi tidak menyebutkan konsep atau tujuan SLIK secara eksplisit. 
+
+Sebagai asisten AI yang ahli dalam hukum dan peraturan OJK, saya hanya dapat menggunakan konteks yang diberikan untuk menjawab pertanyaan. Karena tidak ada informasi tentang SLIK dalam dokumen yang tersedia, jawaban ini sesuai dengan aturan ke-1. Untuk mendapatkan informasi lebih lanjut mengenai penggunaan SLIK, disarankan untuk merujuk pada peraturan OJK khusus yang secara eksplisit membahas sistem laporan kredit atau dokumen resmi lainnya yang relevan."|SLIK dapat dimanfaatkan untuk mendukung Lembaga Jasa Keuangan (LJK) dalam proses analisis penyediaan dana,  penerapan manajemen risiko kredit atau pembiayaan dan/atau risiko asuransi atau penjaminan, serta kegiatan lainnya untuk mendukung pelaksanaan kegiatan usaha pada LJK. [cite: 18]|0.42105263157894735|0.0|0.0|0.0

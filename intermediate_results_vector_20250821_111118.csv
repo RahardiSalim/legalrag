@@ -1,0 +1,107 @@
+question_id,question,answer,num_contexts,processing_time,search_type,enhanced_query,timestamp,ground_truth,top_sources
+1,[cite_start]Apa kepanjangan dari SLIK?,"<think>
+Okay, so I need to figure out what SLIK stands for based on the provided context documents. Let me go through each document carefully.
+
+First, looking at the documents listed from DOKUMEN 1 to DOKUMEN 10. The question is about the acronym SLIK. 
+
+Starting with DOKUMEN 7: It mentions ""Laporan Debitur dilaporkan oleh Pelapor SLIK"". Here, it says ""Pelapor SLIK"" which might indicate that SLIK is an abbreviation for something related to reporting. But I need more context.
+
+DOKUMEN 9 talks about ""Pelaporan Transaksi Lainnya melalui LPBBTI"" and mentions examples where the source of funds come from Pelapor or Non-Pelapor. The document says ""Laporan Debitur dilaporkan oleh Pelapor SLIK"". Wait, in DOKUMEN 9's KONTEN: it states ""Dalam hal sumber dana seluruhnya berasal dari Pelapor... maka Bank A menyampaikan laporan debitur Debitur X ke SLIK sesuai jenis kredit/pembiayaan (channeling)"". So here, SLIK is where the report is sent to. The term ""SLIK"" here might be an acronym for a specific institution or system.
+
+In DOKUMEN 7: ""Laporan Debitur dilaporkan oleh Pelapor SLIK"". This suggests that SLIK is part of the reporting entity. 
+
+Wait, in Indonesian financial terms, OJK (Otoritas Jasa Keuangan) has various systems. The term SLIK might stand for ""Sistem Laporan Informasi Kredit"" or something similar. But I need to check the documents.
+
+Looking at DOKUMEN 9 again: It says ""SLIK"" is where the Bank A sends the debitur report. The document mentions ""Penyelenggara LPBBTI"" which might be a different acronym. 
+
+Wait, in DOK: The question is about SLIK's full form. Let me check if any of the documents explicitly define what SLIK stands for.
+
+DOKUMEN 9 has a section that says: ""Laporan Debitur dilaporkan oleh Pelapor SLIK"". So here, it's ""Pelapor SLIK"" which might mean that SLIK is the entity that the reporter (Pelapor) belongs to. 
+
+Another angle: In Indonesia's financial regulatory context, OJK has a system called SLIK (Sistem Laporan Informasi Kredit). But I need to confirm.
+
+Wait, in DOKUMEN 9, there's an example where ""Bank A"" sends the report to SLIK. So SLIK is likely the system or institution that receives these reports.
+
+Alternatively, looking at DOKUMEN 7: It mentions ""LJK yang memiliki dana"" (financial institutions with funds) and ""LJK penyalur"" (those who disburse). The term ""SLIK"" here might be related to the reporting mechanism.
+
+Wait, perhaps SLIK stands for ""Sistem Laporan Informasi Kredit"". Let me check if there's a standard acronym in OJK documents. 
+
+In Indonesian financial regulations, OJK uses acronyms like SLIK (Sistem Laporan Informasi Kredit) for credit information systems. But I need to see if the provided documents specify this.
+
+Wait, DOKUMEN 9 says: ""Dalam hal sumber dana seluruhnya berasal dari Pelapor... maka Bank A menyampaikan laporan debitur Debitur X ke SLIK"". So here, SLIK is the entity that receives the report. The term might be ""Sistem Laporan Informasi Kredit"" (Credit Information Reporting System).
+
+Alternatively, in some contexts, SLIK could stand for ""Sistem Laporan Informasi Kredit"" but I need to check if the documents mention it.
+
+Wait, looking at DOKUMEN 9's KONTEN: It says ""SLIK"" is where the report is sent. The full form might be defined elsewhere in the documents.
+
+Another document: DOKUMEN 7 mentions ""LJK"" (Leasing dan Kredit) but that's a different acronym.
+
+Wait, perhaps SLIK stands for ""Sistem Laporan Informasi Kredit"". Let me check if there's another possible expansion. 
+
+Alternatively, in OJK's context, SLIK might be ""Sistem Laporan Informasi Kredit"" or ""Sistem Laporan Informasi Kredit Berbasis Teknologi"".
+
+But given the documents provided, I need to find where it's defined.
+
+Wait, DOKUMEN 9 mentions: ""Laporan Debitur dilaporkan oleh Pelapor SLIK"". So here, ""Pelapor SLIK"" is a term. Maybe SLIK is an abbreviation for ""Penyelenggara Laporan Informasi Kredit"".
+
+Alternatively, looking at the Indonesian language terms:
+
+- Pelapor: Reporter
+- SLIK: Could be Sistem Laporan Informasi Kredit (Credit Information Reporting System)
+
+But I need to confirm.
+
+In Indonesia's financial sector, OJK has a system called SLIK for credit reporting. The full form is ""Sistem Laporan Informasi Kredit"".
+
+Wait, another approach: Check if any of the documents explicitly state what SLIK stands for.
+
+Looking at DOKUMEN 9 again:
+
+""10. Pelaporan Transaksi Lainnya melalui LPBBTI
+
+a. Dalam hal sumber dana seluruhnya berasal dari Pelapor Ilustrasi: Debitur X mengajukan fasilitas kredit/pembiayaan melalui Penyelenggara LPBBTI yang sumber dana seluruhnya berasal dari Pelapor (contoh: Bank A), maka Bank A menyampaikan laporan debitur Debitur X ke SLIK sesuai jenis kredit/pembiayaan (channeling).""
+
+Here, it's clear that Bank A sends the report to SLIK. So SLIK is a system or entity where these reports are submitted.
+
+In Indonesian regulatory terms, OJK uses ""SLIK"" as an acronym for ""Sistem Laporan Informasi Kredit"". This is a common expansion in their documentation.
+
+Another document: DOKUMEN 7 mentions ""Laporan Debitur dilaporkan oleh Pelapor SLIK"", which might mean that the reporter (Pelapor) is part of SLIK. But I think the answer here is Sistem Laporan Informasi Kredit.
+
+Wait, but in some contexts, it's possible that SLIK stands for something else. Let me check if there's a standard term.
+
+Alternatively, looking at DOKUMEN 10: It talks about ""J.63.1. AKTIVITAS PENGOLAHAN DATA"" which is part of the classification codes, but not directly related to SLIK.
+
+Given that in DOKUMEN 9, it's mentioned as a place where reports are sent (Bank A sends report to SLIK), and considering OJK's structure, I think the correct expansion is ""Sistem Laporan Informasi Kredit"".
+
+But let me check if there's another possibility. For example, in some Indonesian acronyms:
+
+- S: Sistem
+- L: Laporan
+- I: Informasi
+- K: Kredit
+
+Yes, so SLIK would be ""Sistem Laporan Informasi Kredit"" (Credit Information Reporting System).
+
+Therefore, the answer is Sistem Laporan Informasi Kredit.
+
+Wait, but in Indonesian, sometimes acronyms are written with different letters. Let me confirm.
+
+Alternatively, it could be ""Sistem Laporan Informasi Kredit Berbasis Teknologi"", but given the documents provided, and that DOKUMEN 9 refers to SLIK as a place where reports go, I think the standard expansion is Sistem Laporan Informasi Kredit.
+
+Yes, in OJK's context, SLIK stands for ""Sistem Laporan Informasi Kredit"".
+
+So the answer should be ""Sistem Laporan Informasi Kredit"".
+</think>
+
+Apa kepanjangan dari SLIK?
+
+Jawaban: **Sistem Laporan Informasi Kredit**  
+
+**Penjelasan**:  
+Berdasarkan konteks dokumen yang diberikan, terutama pada *DOKUMEN 9* dan *DOKUMEN 7*, SLIK merujuk pada sistem atau entitas yang menerima laporan debitur dari pelapor (misalnya Bank A) sesuai ketentuan OJK. Dalam praktiknya, SLIK adalah singkatan dari **Sistem Laporan Informasi Kredit** yang digunakan untuk mengelola dan menyimpan data transaksi kredit serta pembiayaan dalam sistem pengawasan keuangan Indonesia.  
+
+Contoh penerapannya:  
+- ""Bank A menyampaikan laporan debitur Debitur X ke **SLIK** sesuai jenis kredit/pembiayaan (channeling)"" (*DOKUMEN 9*).  
+- ""Laporan Debitur dilaporkan oleh Pelapor **SLIK**"" (*DOKUMEN 7*).  
+
+Singkatan ini menjadi standar dalam sistem pelaporan keuangan OJK untuk memastikan transparansi dan akuntabilitas dalam aktivitas kredit.",10,128.26319193840027,vector,False,2025-08-21T11:11:18.909505,SLIK adalah Sistem Layanan Informasi Keuangan yang dikelola oleh Otoritas Jasa Keuangan. [cite: 17],temp\tmpieyh_eea\SEOJK 11-SEOJK.01-2024 Pelaporan dan Permintaan Informasi Debitur Melalui Sistem Layanan Informasi Keuangan.pdf; temp\tmpieyh_eea\SEOJK 11-SEOJK.01-2024 Pelaporan dan Permintaan Informasi Debitur Melalui Sistem Layanan Informasi Keuangan.pdf; temp\tmpieyh_eea\SEOJK 11-SEOJK.01-2024 Pelaporan dan Permintaan Informasi Debitur Melalui Sistem Layanan Informasi Keuangan.pdf

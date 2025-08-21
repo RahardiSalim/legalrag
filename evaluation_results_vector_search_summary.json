@@ -1,0 +1,10 @@
+{
+  "timestamp": "2025-08-21T13:47:41.292053",
+  "num_samples": 2,
+  "evaluation_time": 95.50625157356262,
+  "metrics": {},
+  "processing_times": {
+    "mean": 67.93173885345459,
+    "total": 135.86347770690918
+  }
+}

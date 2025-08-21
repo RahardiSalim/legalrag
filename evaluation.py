@@ -1,6 +1,6 @@
 """
-RAGAS Evaluation Module for RAG System
-Provides evaluation metrics for RAG pipeline performance
+Fixed RAGAS Evaluation Module for RAG System
+Addresses OpenAI dependency and adds proper ground truth handling
 """
 
 import logging
@@ -10,7 +10,9 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from datasets import Dataset
+import os
 
+# Import RAGAS components
 from ragas import evaluate
 from ragas.metrics import (
     faithfulness,
@@ -19,15 +21,66 @@ from ragas.metrics import (
     context_precision,
 )
 
+# Import LangChain wrappers for local models
+from langchain.llms.base import LLM
+from langchain.embeddings.base import Embeddings
+
+# Try new import first, fallback to old one
+try:
+    from langchain_ollama import OllamaLLM
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    try:
+        from langchain_community.llms import Ollama as OllamaLLM
+        OLLAMA_AVAILABLE = True
+    except ImportError:
+        OLLAMA_AVAILABLE = False
+
+# Import Gemini for evaluation
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    GEMINI_AVAILABLE = True
+except ImportError:
+    try:
+        from langchain_community.llms import GooglePalm
+        GEMINI_AVAILABLE = True
+    except ImportError:
+        GEMINI_AVAILABLE = False
+
 from models import QueryRequest, SearchType
 from interfaces import RAGServiceInterface
 
 logger = logging.getLogger(__name__)
 
 
+class LocalLLMWrapper(LLM):
+    """Wrapper to make Ollama compatible with RAGAS"""
+    
+    def __init__(self, ollama_llm):
+        super().__init__()
+        self._ollama_llm = ollama_llm
+    
+    def _call(self, prompt: str, stop: Optional[List[str]] = None, run_manager=None, **kwargs) -> str:
+        try:
+            # Use invoke method for ChatOllama
+            if hasattr(self._ollama_llm, 'invoke'):
+                response = self._ollama_llm.invoke(prompt)
+                return response.content if hasattr(response, 'content') else str(response)
+            else:
+                # Fallback for regular Ollama
+                return self._ollama_llm(prompt)
+        except Exception as e:
+            logger.error(f"Error in LocalLLMWrapper: {e}")
+            return "Error generating response"
+    
+    @property
+    def _llm_type(self) -> str:
+        return "local_ollama"
+
+
 class RAGASEvaluator:
     """
-    RAGAS evaluation framework for RAG pipeline assessment
+    Fixed RAGAS evaluation framework for RAG pipeline assessment
     """
     
     def __init__(self, rag_service: RAGServiceInterface, config):
@@ -36,12 +89,83 @@ class RAGASEvaluator:
         self.evaluation_results = []
         self.evaluation_history = []
         
+        # Initialize local models for RAGAS
+        self.evaluator_llm = self._setup_local_llm()
+        self.evaluator_embeddings = self._setup_local_embeddings()
+        
+    def _setup_local_llm(self):
+        """Setup LLM for RAGAS evaluation - can use Gemini or Ollama"""
+        
+        # Check if Gemini API key is available
+        gemini_api_key = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
+        use_gemini = gemini_api_key is not None and GEMINI_AVAILABLE
+        
+        if use_gemini:
+            logger.info("Using Gemini for RAGAS evaluation")
+            try:
+                # Use Gemini for evaluation (more reliable for structured evaluation tasks)
+                gemini_llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.5-flash",
+                    temperature=0.1,
+                    google_api_key=gemini_api_key,
+                    convert_system_message_to_human=True  # For compatibility
+                )
+                
+                # Test Gemini connection
+                try:
+                    test_response = gemini_llm.invoke("Test connection")
+                    logger.info(f"Gemini LLM initialized successfully for RAGAS evaluation")
+                except Exception as e:
+                    logger.warning(f"Gemini test failed: {e}")
+                
+                return gemini_llm
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize Gemini, falling back to Ollama: {e}")
+                use_gemini = False
+        
+        # Fallback to Ollama if Gemini is not available
+        if not use_gemini:
+            logger.info("Using Ollama for RAGAS evaluation")
+            try:
+                if not OLLAMA_AVAILABLE:
+                    raise ImportError("Ollama LLM not available. Please install langchain-ollama: pip install -U langchain-ollama")
+                
+                # Create Ollama instance for evaluation
+                ollama_llm = OllamaLLM(
+                    model=self.config.LLM_MODEL,
+                    base_url=self.config.OLLAMA_BASE_URL,
+                    temperature=0.1,  # Lower temperature for evaluation consistency
+                )
+                
+                # Wrap it for RAGAS compatibility
+                wrapped_llm = LocalLLMWrapper(ollama_llm)
+                logger.info(f"Ollama LLM initialized for RAGAS: {self.config.LLM_MODEL}")
+                return wrapped_llm
+                
+            except Exception as e:
+                logger.error(f"Failed to setup Ollama LLM for RAGAS: {e}")
+                raise
+    
+    def _setup_local_embeddings(self):
+        """Setup local embeddings for RAGAS evaluation"""
+        try:
+            # Use the same embeddings from model manager
+            embeddings = self.rag_service.model_manager.get_embeddings()
+            logger.info("Local embeddings initialized for RAGAS")
+            return embeddings
+            
+        except Exception as e:
+            logger.error(f"Failed to setup local embeddings for RAGAS: {e}")
+            raise
+        
     def prepare_evaluation_dataset(
         self,
         questions: List[str],
         ground_truths: Optional[List[List[str]]] = None,
         search_type: SearchType = SearchType.VECTOR,
-        use_enhanced_query: bool = False
+        use_enhanced_query: bool = False,
+        save_intermediate: bool = True
     ) -> Dataset:
         """
         Prepare evaluation dataset by running queries through RAG pipeline
@@ -51,6 +175,7 @@ class RAGASEvaluator:
             ground_truths: Optional list of ground truth answers (required for context_recall)
             search_type: Type of search to use
             use_enhanced_query: Whether to use query enhancement
+            save_intermediate: Whether to save intermediate results to CSV
             
         Returns:
             Dataset ready for RAGAS evaluation
@@ -61,7 +186,10 @@ class RAGASEvaluator:
         contexts = []
         processing_times = []
         
-        for question in questions:
+        # Prepare intermediate results for CSV saving
+        intermediate_results = []
+        
+        for i, question in enumerate(questions):
             try:
                 # Run query through RAG pipeline
                 start_time = time.time()
@@ -74,7 +202,8 @@ class RAGASEvaluator:
                 processing_time = time.time() - start_time
                 
                 # Extract answer
-                answers.append(result["answer"])
+                answer = result["answer"]
+                answers.append(answer)
                 
                 # Extract contexts from source documents
                 source_docs = result.get("source_documents", [])
@@ -83,15 +212,54 @@ class RAGASEvaluator:
                 
                 processing_times.append(processing_time)
                 
-                logger.debug(f"Processed question: {question[:50]}... in {processing_time:.2f}s")
+                # Store intermediate result
+                intermediate_result = {
+                    "question_id": i + 1,
+                    "question": question,
+                    "answer": answer,
+                    "num_contexts": len(context_list),
+                    "processing_time": processing_time,
+                    "search_type": search_type.value,
+                    "enhanced_query": use_enhanced_query,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Add ground truth if available
+                if ground_truths and i < len(ground_truths):
+                    intermediate_result["ground_truth"] = ground_truths[i][0] if ground_truths[i] else ""
+                
+                # Add source information
+                if source_docs:
+                    sources = [doc.metadata.get("source", "Unknown") for doc in source_docs[:3]]
+                    intermediate_result["top_sources"] = "; ".join(sources)
+                
+                intermediate_results.append(intermediate_result)
+                
+                logger.info(f"Processed question {i+1}/{len(questions)}: {question[:50]}... in {processing_time:.2f}s")
                 
             except Exception as e:
                 logger.error(f"Failed to process question '{question}': {e}")
                 answers.append("Error: Could not generate answer")
                 contexts.append([])
                 processing_times.append(0.0)
+                
+                # Add error to intermediate results
+                intermediate_results.append({
+                    "question_id": i + 1,
+                    "question": question,
+                    "answer": "Error: Could not generate answer",
+                    "error": str(e),
+                    "processing_time": 0.0,
+                    "search_type": search_type.value,
+                    "enhanced_query": use_enhanced_query,
+                    "timestamp": datetime.now().isoformat()
+                })
         
-        # Prepare data dictionary
+        # Save intermediate results if requested
+        if save_intermediate and intermediate_results:
+            self._save_intermediate_results(intermediate_results, search_type)
+        
+        # Prepare data dictionary for RAGAS
         data = {
             "question": questions,
             "answer": answers,
@@ -99,16 +267,30 @@ class RAGASEvaluator:
             "processing_time": processing_times,
         }
         
-        # Add ground truths if provided
+        # Add ground truths if provided - FIXED: Use correct format for newer RAGAS
         if ground_truths:
             if len(ground_truths) != len(questions):
                 logger.warning(f"Ground truths count ({len(ground_truths)}) doesn't match questions ({len(questions)})")
-                ground_truths = ground_truths[:len(questions)] if len(ground_truths) > len(questions) else \
-                               ground_truths + [["No ground truth provided"]] * (len(questions) - len(ground_truths))
-            data["ground_truths"] = ground_truths
+                # Pad or truncate ground truths to match questions
+                if len(ground_truths) < len(questions):
+                    ground_truths.extend([["No ground truth provided"]] * (len(questions) - len(ground_truths)))
+                else:
+                    ground_truths = ground_truths[:len(questions)]
+            
+            # Convert List[List[str]] to List[str] for newer RAGAS versions
+            ground_truth_strings = []
+            for gt in ground_truths:
+                if isinstance(gt, list):
+                    ground_truth_strings.append(gt[0] if gt else "No ground truth provided")
+                else:
+                    ground_truth_strings.append(str(gt))
+            
+            data["ground_truth"] = ground_truth_strings
+            logger.info("Ground truths added to dataset as strings")
         
         # Store processing times for analysis
         self.last_processing_times = processing_times
+        self.last_intermediate_results = intermediate_results
         
         # Convert to dataset
         dataset = Dataset.from_dict(data)
@@ -116,13 +298,26 @@ class RAGASEvaluator:
         
         return dataset
     
+    def _save_intermediate_results(self, results: List[Dict], search_type: SearchType):
+        """Save intermediate results to CSV with pipe delimiter"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"intermediate_results_{search_type.value}_{timestamp}.csv"
+            
+            df = pd.DataFrame(results)
+            df.to_csv(filename, index=False, encoding='utf-8', sep='|')
+            logger.info(f"Intermediate results saved to {filename}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save intermediate results: {e}")
+    
     def evaluate_pipeline(
         self,
         dataset: Dataset,
         metrics_to_use: Optional[List] = None
     ) -> Dict[str, Any]:
         """
-        Evaluate RAG pipeline using RAGAS metrics
+        Evaluate RAG pipeline using RAGAS metrics with local models
         
         Args:
             dataset: Prepared evaluation dataset
@@ -131,24 +326,34 @@ class RAGASEvaluator:
         Returns:
             Dictionary containing evaluation results
         """
-        logger.info("Starting RAGAS evaluation")
+        logger.info("Starting RAGAS evaluation with local models")
         
         # Determine which metrics to use
         if metrics_to_use is None:
-            metrics_to_use = [context_precision, faithfulness, answer_relevancy]
+            metrics_to_use = [faithfulness, answer_relevancy]
             
             # Add context_recall only if ground truths are available
-            if "ground_truths" in dataset.column_names:
+            if "ground_truth" in dataset.column_names:
                 metrics_to_use.append(context_recall)
                 logger.info("Ground truths available - including context_recall metric")
+            
+            # Add context_precision (doesn't require ground truth)
+            metrics_to_use.append(context_precision)
         
         try:
-            # Run evaluation
+            # Run evaluation with local models
             start_time = time.time()
+            
+            logger.info("Running RAGAS evaluation...")
             result = evaluate(
                 dataset=dataset,
                 metrics=metrics_to_use,
+                llm=self.evaluator_llm,
+                embeddings=self.evaluator_embeddings,
+                # Disable any OpenAI fallbacks
+                raise_exceptions=False
             )
+            
             evaluation_time = time.time() - start_time
             
             # Convert to pandas for easier analysis
@@ -167,12 +372,18 @@ class RAGASEvaluator:
                 metric_name = metric.__class__.__name__
                 if metric_name in df.columns:
                     scores = df[metric_name].dropna()
-                    evaluation_summary["metrics"][metric_name] = {
-                        "mean": float(scores.mean()),
-                        "min": float(scores.min()),
-                        "max": float(scores.max()),
-                        "std": float(scores.std())
-                    }
+                    if len(scores) > 0:
+                        evaluation_summary["metrics"][metric_name] = {
+                            "mean": float(scores.mean()),
+                            "min": float(scores.min()),
+                            "max": float(scores.max()),
+                            "std": float(scores.std()),
+                            "count": len(scores)
+                        }
+                    else:
+                        evaluation_summary["metrics"][metric_name] = {
+                            "error": "No valid scores generated"
+                        }
             
             # Add processing time stats if available
             if hasattr(self, 'last_processing_times'):
@@ -191,6 +402,9 @@ class RAGASEvaluator:
             
         except Exception as e:
             logger.error(f"RAGAS evaluation failed: {e}")
+            # Save what we have so far
+            if hasattr(self, 'last_intermediate_results'):
+                self._save_intermediate_results(self.last_intermediate_results, SearchType.VECTOR)
             raise
     
     def evaluate_with_test_set(
@@ -212,12 +426,13 @@ class RAGASEvaluator:
         Returns:
             Evaluation results dictionary
         """
-        # Prepare dataset
+        # Prepare dataset with intermediate saving
         dataset = self.prepare_evaluation_dataset(
             questions=test_questions,
             ground_truths=test_ground_truths,
             search_type=search_type,
-            use_enhanced_query=use_enhanced_query
+            use_enhanced_query=use_enhanced_query,
+            save_intermediate=True
         )
         
         # Evaluate
@@ -236,7 +451,7 @@ class RAGASEvaluator:
     
     def save_evaluation_results(self, filepath: Optional[str] = None) -> str:
         """
-        Save evaluation results to file
+        Save evaluation results to file with pipe delimiter
         
         Args:
             filepath: Optional filepath (defaults to evaluation_results_{timestamp}.csv)
@@ -254,7 +469,8 @@ class RAGASEvaluator:
         filepath = Path(filepath)
         filepath.parent.mkdir(parents=True, exist_ok=True)
         
-        self.last_evaluation_df.to_csv(filepath, index=False)
+        # Save with UTF-8 encoding and pipe delimiter for Indonesian text
+        self.last_evaluation_df.to_csv(filepath, index=False, encoding='utf-8', sep='|')
         logger.info(f"Evaluation results saved to {filepath}")
         
         return str(filepath)
@@ -331,84 +547,3 @@ class RAGASEvaluator:
                 comparison_results[search_type.value] = {"error": str(e)}
         
         return comparison_results
-
-
-# class EvaluationDataGenerator:
-#     """
-#     Helper class to generate test data for evaluation
-#     """
-    
-#     def __init__(self, rag_service: RAGServiceInterface, config):
-#         self.rag_service = rag_service
-#         self.config = config
-    
-#     def generate_test_questions_from_documents(
-#         self,
-#         num_questions: int = 10,
-#         focus_areas: Optional[List[str]] = None
-#     ) -> List[str]:
-#         """
-#         Generate test questions based on indexed documents
-        
-#         Args:
-#             num_questions: Number of questions to generate
-#             focus_areas: Optional list of topics to focus on
-            
-#         Returns:
-#             List of generated test questions
-#         """
-#         # This is a placeholder - in production, you might use an LLM to generate questions
-#         # based on the actual document content
-        
-#         default_questions = [
-#             "Apa saja ketentuan utama dalam dokumen ini?",
-#             "Bagaimana prosedur yang dijelaskan dalam dokumen?",
-#             "Apa sanksi yang disebutkan dalam dokumen?",
-#             "Siapa pihak yang bertanggung jawab menurut dokumen?",
-#             "Apa definisi istilah penting dalam dokumen?",
-#             "Bagaimana mekanisme pengawasan yang diatur?",
-#             "Apa hak dan kewajiban yang disebutkan?",
-#             "Bagaimana proses penyelesaian sengketa?",
-#             "Apa persyaratan yang harus dipenuhi?",
-#             "Bagaimana struktur organisasi yang dijelaskan?"
-#         ]
-        
-#         return default_questions[:num_questions]
-    
-#     def create_benchmark_dataset(
-#         self,
-#         questions: List[str],
-#         ground_truths: List[List[str]],
-#         metadata: Optional[Dict[str, Any]] = None
-#     ) -> Dict[str, Any]:
-#         """
-#         Create a benchmark dataset for consistent evaluation
-        
-#         Args:
-#             questions: List of benchmark questions
-#             ground_truths: List of ground truth answers
-#             metadata: Optional metadata about the dataset
-            
-#         Returns:
-#             Benchmark dataset dictionary
-#         """
-#         benchmark = {
-#             "questions": questions,
-#             "ground_truths": ground_truths,
-#             "metadata": metadata or {},
-#             "created_at": datetime.now().isoformat(),
-#             "version": "1.0"
-#         }
-        
-#         # Save to file for reuse
-#         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#         filepath = Path(f"benchmarks/benchmark_{timestamp}.json")
-#         filepath.parent.mkdir(parents=True, exist_ok=True)
-        
-#         import json
-#         with open(filepath, 'w', encoding='utf-8') as f:
-#             json.dump(benchmark, f, ensure_ascii=False, indent=2)
-        
-#         logger.info(f"Benchmark dataset saved to {filepath}")
-        
-#         return benchmark

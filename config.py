@@ -67,8 +67,8 @@ class Config:
     MAX_DOCUMENT_SIZE: int = 10_000_000
     
     # Retrieval Configuration
-    SEARCH_K: int = 50
-    RERANK_K: int = 10
+    SEARCH_K: int = 5
+    RERANK_K: int = 5
     
     # Hybrid Retrieval Weights
     VECTOR_WEIGHT: float = 0.7
